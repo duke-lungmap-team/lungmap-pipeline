@@ -10,28 +10,33 @@ seg_config = [
     {
         'type': 'color',
         'args': {
-            'blur_kernel': (17, 17),
+            'blur_kernel': (15, 15),
             'min_size': 3 * cell_size,
             'max_size': None,
-            'colors': ['green', 'cyan', 'red', 'violet', 'yellow']
+            'colors': ['green', 'cyan', 'red', 'violet']
         }
     },
     {
         'type': 'saturation',
-        'args': {'blur_kernel': (71, 71), 'min_size': 12 * cell_size, 'max_size': None}
+        'args': {'blur_kernel': (63, 63), 'min_size': 3 * cell_size, 'max_size': None}
     },
     {
         'type': 'saturation',
-        'args': {'blur_kernel': (53, 53), 'min_size': 3 * cell_size, 'max_size': None}
+        'args': {'blur_kernel': (31, 31), 'min_size': 3 * cell_size, 'max_size': None}
     },
     {
         'type': 'saturation',
-        'args': {'blur_kernel': (35, 35), 'min_size': 3 * cell_size, 'max_size': 45 * cell_size}
+        'args': {'blur_kernel': (15, 15), 'min_size': 3 * cell_size, 'max_size': None}
     },
     {
-        'type': 'saturation',
-        'args': {'blur_kernel': (17, 17), 'min_size': 3 * cell_size, 'max_size': 45 * cell_size}
-    }
+        'type': 'color',
+        'args': {
+            'blur_kernel': (7, 7),
+            'min_size': 3 * cell_size,
+            'max_size': None,
+            'colors': ['white', 'gray']
+        }
+    },
 ]
 
 image_set_dir = 'mm_e16.5_20x_sox9_sftpc_acta2/light_color_corrected'
@@ -81,8 +86,12 @@ except FileNotFoundError:
 candidate_contours = pipeline.generate_structure_candidates(
     test_img_hsv,
     seg_config,
-    filter_min_size=2 * cell_size,
-    plot=True
+    filter_min_size=3 * cell_size,
+    dog_factor=7,
+    process_residual=False,
+    predict_model=xgb_model,
+    categories=categories,
+    plot=False
 )
 test_data_processed = pipeline.process_test_data(test_img_hsv, candidate_contours)
 pred_results = pipeline.predict(test_data_processed, xgb_model, categories)
