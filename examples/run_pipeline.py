@@ -2,6 +2,8 @@ import os
 import numpy as np
 from micap import utils, pipeline
 import pickle
+import matplotlib.pyplot as plt
+import cv2
 
 cell_radius = 16
 cell_size = np.pi * (cell_radius ** 2)
@@ -82,6 +84,13 @@ except FileNotFoundError:
     pickle.dump(pck, f)
     f.close()
 
+# test_img_hsv = test_img_hsv[750:1000, 1050:1300, :]
+#
+# plt.figure(figsize=(16, 16))
+# plt.imshow(cv2.cvtColor(test_img_hsv, cv2.COLOR_HSV2RGB))
+# plt.axis('off')
+# plt.show()
+
 # and pipeline test steps
 candidate_contours = pipeline.generate_structure_candidates(
     test_img_hsv,
@@ -97,7 +106,12 @@ test_data_processed = pipeline.process_test_data(test_img_hsv, candidate_contour
 pred_results = pipeline.predict(test_data_processed, xgb_model, categories)
 
 # plot functions
-pipeline.plot_test_results(test_img_hsv, candidate_contours, pred_results, output_path)
+pipeline.plot_test_results(
+    test_img_hsv,
+    candidate_contours,
+    pred_results,
+    output_path
+)
 
 # optional cell segmentation
 # utils.process_structures_into_cells(
@@ -105,6 +119,6 @@ pipeline.plot_test_results(test_img_hsv, candidate_contours, pred_results, outpu
 #     os.path.join(output_path, 'regions'),
 #     candidate_contours,
 #     cell_color_list=['green', 'cyan'],
-#     max_cell_area=1.5*cell_size,
+#     max_cell_area=1.0*cell_size,
 #     plot=True
 # )
