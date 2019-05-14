@@ -3,7 +3,6 @@ import ttkthemes as themed_tk
 from tkinter import filedialog, ttk
 import PIL.Image
 import PIL.ImageTk
-import os
 import json
 import numpy as np
 import lungmap_utils
@@ -47,17 +46,31 @@ class Application(tk.Frame):
 
         tk.Frame.__init__(self, master=master)
 
-        self.base_dir = 'somewhere to save images temporarily'
-        self.images = []
+        self.master.minsize(width=WINDOW_WIDTH, height=WINDOW_HEIGHT)
+        self.master.config(bg=BACKGROUND_COLOR)
+        self.master.title("LungMAP Region Generator")
+
+        self.images = {}
         self.image_dims = None
         self.lm_query_top = None
         self.img_region_lut = None
         self.current_img = None
         self.tk_image = None
 
-        self.master.minsize(width=WINDOW_WIDTH, height=WINDOW_HEIGHT)
-        self.master.config(bg=BACKGROUND_COLOR)
-        self.master.title("LungMAP Region Generator")
+        self.current_dev_stage = tk.StringVar(self.master)
+        self.current_mag = tk.StringVar(self.master)
+        self.current_probe1 = tk.StringVar(self.master)
+        self.current_probe2 = tk.StringVar(self.master)
+        self.current_probe3 = tk.StringVar(self.master)
+
+        self.dev_stage_option = None
+        self.mag_option = None
+        self.probe1_option = None
+        self.probe2_option = None
+        self.probe3_option = None
+        self.query_results_list_box = None
+        self.queried_images = []
+        self.download_progress_bar = None
 
         main_frame = tk.Frame(self.master, bg=BACKGROUND_COLOR)
         main_frame.pack(
@@ -208,7 +221,7 @@ class Application(tk.Frame):
 
     def query_lungmap_images(self):
         lm_query_top = tk.Toplevel(bg=BACKGROUND_COLOR)
-        self.images = []
+        lm_query_top.minsize(height=360, width=720)
 
         metadata_options_frame = tk.Frame(lm_query_top, bg=BACKGROUND_COLOR)
         metadata_options_frame.pack(
@@ -244,12 +257,6 @@ class Application(tk.Frame):
             pady=PAD_MEDIUM
         )
 
-        self.current_dev_stage = tk.StringVar(self.master)
-        self.current_mag = tk.StringVar(self.master)
-        self.current_probe1 = tk.StringVar(self.master)
-        self.current_probe2 = tk.StringVar(self.master)
-        self.current_probe3 = tk.StringVar(self.master)
-
         dev_stage_frame = tk.Frame(
             metadata_options_left_frame,
             bg=BACKGROUND_COLOR
@@ -272,7 +279,6 @@ class Application(tk.Frame):
             textvariable=self.current_dev_stage,
             state='readonly'
         )
-        self.dev_stage_option.bind('<<ComboboxSelected>>', self.select_dev_stage)
         self.dev_stage_option['values'] = sorted(DEV_STAGES)
         self.dev_stage_option.pack(side=tk.RIGHT, fill='x', expand=False)
 
@@ -298,7 +304,6 @@ class Application(tk.Frame):
             textvariable=self.current_mag,
             state='readonly'
         )
-        self.mag_option.bind('<<ComboboxSelected>>', self.select_mag)
         self.mag_option['values'] = sorted(MAG_VALUES)
         self.mag_option.pack(side=tk.RIGHT, fill='x', expand=False)
 
@@ -324,7 +329,6 @@ class Application(tk.Frame):
             textvariable=self.current_probe1,
             state='readonly'
         )
-        self.probe1_option.bind('<<ComboboxSelected>>', self.select_probes)
         self.probe1_option['values'] = sorted(PROBES)
         self.probe1_option.pack(side=tk.RIGHT, fill='x', expand=False)
 
@@ -350,7 +354,6 @@ class Application(tk.Frame):
             textvariable=self.current_probe2,
             state='readonly'
         )
-        self.probe2_option.bind('<<ComboboxSelected>>', self.select_probes)
         self.probe2_option['values'] = sorted(PROBES)
         self.probe2_option.pack(side=tk.RIGHT, fill='x', expand=False)
 
@@ -376,9 +379,23 @@ class Application(tk.Frame):
             textvariable=self.current_probe3,
             state='readonly'
         )
-        self.probe3_option.bind('<<ComboboxSelected>>', self.select_probes)
         self.probe3_option['values'] = sorted(PROBES)
         self.probe3_option.pack(side=tk.RIGHT, fill='x', expand=False)
+
+        query_button_frame = tk.Frame(lm_query_top, bg=BACKGROUND_COLOR)
+        query_button_frame.pack(
+            fill='x',
+            expand=False,
+            anchor=tk.N,
+            padx=PAD_SMALL,
+            pady=PAD_SMALL
+        )
+        query_button = ttk.Button(
+            query_button_frame,
+            text="Run Query",
+            command=self.query_images
+        )
+        query_button.pack(anchor=tk.E)
 
         file_chooser_frame = tk.Frame(lm_query_top, bg=BACKGROUND_COLOR)
         file_chooser_frame.pack(
@@ -389,40 +406,75 @@ class Application(tk.Frame):
             pady=PAD_MEDIUM
         )
 
-        file_list_frame = tk.Frame(
+        query_results_frame = tk.Frame(
             file_chooser_frame,
             bg=BACKGROUND_COLOR,
             highlightcolor=HIGHLIGHT_COLOR,
             highlightbackground=BORDER_COLOR,
             highlightthickness=1
         )
-        file_scroll_bar = ttk.Scrollbar(file_list_frame, orient='vertical')
-        file_list_box = tk.Listbox(
-            file_list_frame,
+        query_results_scroll_bar = ttk.Scrollbar(query_results_frame, orient='vertical')
+        self.query_results_list_box = tk.Listbox(
+            query_results_frame,
             exportselection=False,
             height=4,
-            yscrollcommand=file_scroll_bar.set,
+            yscrollcommand=query_results_scroll_bar.set,
             relief='flat',
             borderwidth=0,
             highlightthickness=0,
             selectbackground=HIGHLIGHT_COLOR,
             selectforeground='#ffffff'
         )
-        file_list_box.bind('<<ListboxSelect>>', self.select_file)
-        file_scroll_bar.config(command=self.file_list_box.yview)
-        file_scroll_bar.pack(side='right', fill='y')
-        file_list_box.pack(fill='both', expand=True)
+        query_results_scroll_bar.config(command=self.file_list_box.yview)
+        query_results_scroll_bar.pack(side='right', fill='y')
+        self.query_results_list_box.pack(fill='both', expand=True)
 
-        file_list_frame.pack(
+        query_results_frame.pack(
             fill='both',
             expand=True,
             padx=PAD_MEDIUM,
             pady=PAD_SMALL
         )
 
-        b = ttk.Button(lm_query_top, text="OK", command=lm_query_top.destroy)
-        b.pack(
+        bottom_frame = tk.Frame(lm_query_top, bg=BACKGROUND_COLOR)
+        bottom_frame.pack(
+            fill='x',
+            expand=False,
+            anchor='n',
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        progress_frame = tk.Frame(bottom_frame, bg=BACKGROUND_COLOR)
+        progress_frame.pack(
+            fill='both',
+            expand=True,
+            anchor=tk.S,
+            side=tk.LEFT,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+        self.download_progress_bar = ttk.Progressbar(progress_frame)
+        self.download_progress_bar.pack(
+            anchor=tk.S,
+            fill='x',
+            expand=True
+        )
+
+        done_button = ttk.Button(bottom_frame, text="Done", command=lm_query_top.destroy)
+        done_button.pack(
             anchor=tk.E,
+            side=tk.RIGHT,
+            expand=False,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        download_button = ttk.Button(bottom_frame, text="Download Images", command=self.download_images)
+        download_button.pack(
+            anchor=tk.E,
+            side=tk.RIGHT,
+            expand=False,
             padx=PAD_MEDIUM,
             pady=PAD_MEDIUM
         )
@@ -472,8 +524,13 @@ class Application(tk.Frame):
     def select_file(self, event):
         current_sel = self.file_list_box.curselection()
         self.current_img = self.file_list_box.get(current_sel[0])
-        img_path = os.path.join(self.base_dir, self.current_img)
-        cv_img = cv2.imread(img_path)
+        cv_img = cv2.imdecode(
+            np.fromstring(
+                self.images[self.current_img],
+                dtype=np.uint8
+            ),
+            cv2.IMREAD_COLOR
+        )
 
         image = PIL.Image.fromarray(
             cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB),
@@ -492,22 +549,39 @@ class Application(tk.Frame):
 
         self.select_label(event)
 
-    # noinspection PyUnusedLocal
-    def select_dev_stage(self, event):
-        label = self.current_dev_stage.get()
-        print(label)
-
-    # noinspection PyUnusedLocal
-    def select_mag(self, event):
-        label = self.current_mag.get()
-        print(label)
-
-    # noinspection PyUnusedLocal
-    def select_probes(self, event):
+    def query_images(self):
+        dev_stage = self.current_dev_stage.get()
+        mag = self.current_mag.get()
         probe1 = self.current_probe1.get()
         probe2 = self.current_probe2.get()
         probe3 = self.current_probe3.get()
-        print(probe1, probe2, probe3)
+        probes = [probe1, probe2, probe3]
+
+        # TODO: show error dialog if any metadata field was not selected
+
+        self.queried_images = lungmap_utils.client.get_images_by_metadata(
+            dev_stage, mag, probes
+        )
+        # clear the list box
+        self.query_results_list_box.delete(0, tk.END)
+        for img in self.queried_images:
+            url_parts = img['image_url']['value'].split('/')
+            image_name = url_parts[-1]
+            self.query_results_list_box.insert(tk.END, image_name)
+
+    def download_images(self):
+        self.download_progress_bar.config(maximum=len(self.queried_images))
+        for img in self.queried_images:
+            image_name, tmp_img = lungmap_utils.client.get_image_from_lungmap(
+                img['image_url']['value']
+            )
+
+            self.images[image_name] = tmp_img
+            self.file_list_box.insert(tk.END, image_name)
+
+            # update progress bar
+            self.download_progress_bar.step()
+            self.download_progress_bar.update()
 
     # noinspection PyUnusedLocal
     def select_label(self, event):
