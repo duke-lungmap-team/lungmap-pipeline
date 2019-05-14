@@ -6,6 +6,7 @@ import PIL.ImageTk
 import os
 import json
 import numpy as np
+import lungmap_utils
 
 # weird import style to un-confuse PyCharm
 try:
@@ -22,6 +23,22 @@ WINDOW_HEIGHT = 720
 
 PAD_SMALL = 2
 PAD_MEDIUM = 4
+
+DEV_STAGES = [
+    "E16.5",
+    "E18.5",
+    "P01",
+    "P03",
+    "P07"
+]
+
+MAG_VALUES = [
+    "20X",
+    "60X",
+    "100X"
+]
+
+PROBES = lungmap_utils.client.get_probes()
 
 
 class Application(tk.Frame):
@@ -193,13 +210,222 @@ class Application(tk.Frame):
         lm_query_top = tk.Toplevel(bg=BACKGROUND_COLOR)
         self.images = []
 
-        ttk.Label(lm_query_top, text="Value").pack()
+        metadata_options_frame = tk.Frame(lm_query_top, bg=BACKGROUND_COLOR)
+        metadata_options_frame.pack(
+            fill=tk.X,
+            expand=False,
+            anchor=tk.N,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
 
-        e = ttk.Entry(lm_query_top)
-        e.pack()
+        metadata_options_left_frame = tk.Frame(
+            metadata_options_frame,
+            bg=BACKGROUND_COLOR
+        )
+        metadata_options_left_frame.pack(
+            fill=tk.X,
+            expand=False,
+            anchor=tk.N,
+            side=tk.LEFT,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+        metadata_options_right_frame = tk.Frame(
+            metadata_options_frame,
+            bg=BACKGROUND_COLOR
+        )
+        metadata_options_right_frame.pack(
+            fill=tk.X,
+            expand=False,
+            anchor=tk.N,
+            side=tk.RIGHT,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        self.current_dev_stage = tk.StringVar(self.master)
+        self.current_mag = tk.StringVar(self.master)
+        self.current_probe1 = tk.StringVar(self.master)
+        self.current_probe2 = tk.StringVar(self.master)
+        self.current_probe3 = tk.StringVar(self.master)
+
+        dev_stage_frame = tk.Frame(
+            metadata_options_left_frame,
+            bg=BACKGROUND_COLOR
+        )
+        dev_stage_frame.pack(
+            fill=tk.X,
+            expand=False,
+            side=tk.TOP,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        ttk.Label(
+            dev_stage_frame,
+            text="Development Stage:",
+            background=BACKGROUND_COLOR
+        ).pack(side=tk.LEFT)
+        self.dev_stage_option = ttk.Combobox(
+            dev_stage_frame,
+            textvariable=self.current_dev_stage,
+            state='readonly'
+        )
+        self.dev_stage_option.bind('<<ComboboxSelected>>', self.select_dev_stage)
+        self.dev_stage_option['values'] = sorted(DEV_STAGES)
+        self.dev_stage_option.pack(side=tk.RIGHT, fill='x', expand=False)
+
+        mag_frame = tk.Frame(
+            metadata_options_left_frame,
+            bg=BACKGROUND_COLOR
+        )
+        mag_frame.pack(
+            fill=tk.X,
+            expand=False,
+            side=tk.TOP,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        ttk.Label(
+            mag_frame,
+            text="Magnification:",
+            background=BACKGROUND_COLOR
+        ).pack(side=tk.LEFT)
+        self.mag_option = ttk.Combobox(
+            mag_frame,
+            textvariable=self.current_mag,
+            state='readonly'
+        )
+        self.mag_option.bind('<<ComboboxSelected>>', self.select_mag)
+        self.mag_option['values'] = sorted(MAG_VALUES)
+        self.mag_option.pack(side=tk.RIGHT, fill='x', expand=False)
+
+        probe1_frame = tk.Frame(
+            metadata_options_right_frame,
+            bg=BACKGROUND_COLOR
+        )
+        probe1_frame.pack(
+            fill=tk.X,
+            expand=False,
+            side=tk.TOP,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        ttk.Label(
+            probe1_frame,
+            text="Probe 1:",
+            background=BACKGROUND_COLOR
+        ).pack(side=tk.LEFT)
+        self.probe1_option = ttk.Combobox(
+            probe1_frame,
+            textvariable=self.current_probe1,
+            state='readonly'
+        )
+        self.probe1_option.bind('<<ComboboxSelected>>', self.select_probes)
+        self.probe1_option['values'] = sorted(PROBES)
+        self.probe1_option.pack(side=tk.RIGHT, fill='x', expand=False)
+
+        probe2_frame = tk.Frame(
+            metadata_options_right_frame,
+            bg=BACKGROUND_COLOR
+        )
+        probe2_frame.pack(
+            fill=tk.X,
+            expand=False,
+            side=tk.TOP,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        ttk.Label(
+            probe2_frame,
+            text="Probe 2:",
+            background=BACKGROUND_COLOR
+        ).pack(side=tk.LEFT)
+        self.probe2_option = ttk.Combobox(
+            probe2_frame,
+            textvariable=self.current_probe2,
+            state='readonly'
+        )
+        self.probe2_option.bind('<<ComboboxSelected>>', self.select_probes)
+        self.probe2_option['values'] = sorted(PROBES)
+        self.probe2_option.pack(side=tk.RIGHT, fill='x', expand=False)
+
+        probe3_frame = tk.Frame(
+            metadata_options_right_frame,
+            bg=BACKGROUND_COLOR
+        )
+        probe3_frame.pack(
+            fill=tk.X,
+            expand=False,
+            side=tk.TOP,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        ttk.Label(
+            probe3_frame,
+            text="Probe 3:",
+            background=BACKGROUND_COLOR
+        ).pack(side=tk.LEFT)
+        self.probe3_option = ttk.Combobox(
+            probe3_frame,
+            textvariable=self.current_probe3,
+            state='readonly'
+        )
+        self.probe3_option.bind('<<ComboboxSelected>>', self.select_probes)
+        self.probe3_option['values'] = sorted(PROBES)
+        self.probe3_option.pack(side=tk.RIGHT, fill='x', expand=False)
+
+        file_chooser_frame = tk.Frame(lm_query_top, bg=BACKGROUND_COLOR)
+        file_chooser_frame.pack(
+            fill='both',
+            expand=True,
+            anchor=tk.N,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        file_list_frame = tk.Frame(
+            file_chooser_frame,
+            bg=BACKGROUND_COLOR,
+            highlightcolor=HIGHLIGHT_COLOR,
+            highlightbackground=BORDER_COLOR,
+            highlightthickness=1
+        )
+        file_scroll_bar = ttk.Scrollbar(file_list_frame, orient='vertical')
+        file_list_box = tk.Listbox(
+            file_list_frame,
+            exportselection=False,
+            height=4,
+            yscrollcommand=file_scroll_bar.set,
+            relief='flat',
+            borderwidth=0,
+            highlightthickness=0,
+            selectbackground=HIGHLIGHT_COLOR,
+            selectforeground='#ffffff'
+        )
+        file_list_box.bind('<<ListboxSelect>>', self.select_file)
+        file_scroll_bar.config(command=self.file_list_box.yview)
+        file_scroll_bar.pack(side='right', fill='y')
+        file_list_box.pack(fill='both', expand=True)
+
+        file_list_frame.pack(
+            fill='both',
+            expand=True,
+            padx=PAD_MEDIUM,
+            pady=PAD_SMALL
+        )
 
         b = ttk.Button(lm_query_top, text="OK", command=lm_query_top.destroy)
-        b.pack()
+        b.pack(
+            anchor=tk.E,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
 
     def draw_polygon(self):
         self.canvas.delete("poly")
@@ -265,6 +491,23 @@ class Application(tk.Frame):
         )
 
         self.select_label(event)
+
+    # noinspection PyUnusedLocal
+    def select_dev_stage(self, event):
+        label = self.current_dev_stage.get()
+        print(label)
+
+    # noinspection PyUnusedLocal
+    def select_mag(self, event):
+        label = self.current_mag.get()
+        print(label)
+
+    # noinspection PyUnusedLocal
+    def select_probes(self, event):
+        probe1 = self.current_probe1.get()
+        probe2 = self.current_probe2.get()
+        probe3 = self.current_probe3.get()
+        print(probe1, probe2, probe3)
 
     # noinspection PyUnusedLocal
     def select_label(self, event):
