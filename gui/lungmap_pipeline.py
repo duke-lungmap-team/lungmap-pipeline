@@ -6,6 +6,7 @@ import PIL.ImageTk
 import json
 import numpy as np
 import lungmap_utils
+from micap import utils as micap_utils
 
 # weird import style to un-confuse PyCharm
 try:
@@ -71,6 +72,7 @@ class Application(tk.Frame):
         self.query_results_list_box = None
         self.queried_images = {}
         self.download_progress_bar = None
+        self.ref_img_name = None
 
         main_frame = tk.Frame(self.master, bg=BACKGROUND_COLOR)
         main_frame.pack(
@@ -110,6 +112,13 @@ class Application(tk.Frame):
             command=self.query_lungmap_images
         )
         add_image_button.pack(side=tk.LEFT)
+
+        preprocess_images_button = ttk.Button(
+            file_chooser_button_frame,
+            text='Pre-process Images',
+            command=self.preprocess_images
+        )
+        preprocess_images_button.pack(side=tk.LEFT)
 
         save_regions_button = ttk.Button(
             file_chooser_button_frame,
@@ -166,6 +175,9 @@ class Application(tk.Frame):
             padx=PAD_MEDIUM,
             pady=PAD_SMALL
         )
+
+        # TODO: put another toolbar here for image display options
+        # including whether to view orig or corrected image, zoom options, etc.
 
         # the canvas frame's contents will use grid b/c of the double
         # scrollbar (they don't look right using pack), but the canvas itself
@@ -524,16 +536,14 @@ class Application(tk.Frame):
     def select_image(self, event):
         current_sel = self.file_list_box.curselection()
         self.current_img = self.file_list_box.get(current_sel[0])
-        cv_img = cv2.imdecode(
-            np.fromstring(
-                self.images[self.current_img]['image_data'],
-                dtype=np.uint8
-            ),
-            cv2.IMREAD_COLOR
-        )
+
+        if self.images[self.current_img]['corr_rgb_img'] is not None:
+            img_to_display = self.images[self.current_img]['corr_rgb_img']
+        else:
+            img_to_display = self.images[self.current_img]['rgb_img']
 
         image = PIL.Image.fromarray(
-            cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB),
+            img_to_display,
             'RGB'
         )
         self.tk_image = PIL.ImageTk.PhotoImage(image)
@@ -583,8 +593,21 @@ class Application(tk.Frame):
                 img_dict['url']
             )
 
+            cv_img = cv2.imdecode(
+                np.fromstring(
+                    tmp_img,
+                    dtype=np.uint8
+                ),
+                cv2.IMREAD_COLOR
+            )
+
+            rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
+            hsv_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2HSV)
+
             self.images[image_name] = {
-                'image_data': tmp_img,
+                'rgb_img': rgb_image,
+                'hsv_img': hsv_image,
+                'corr_rgb_img': None,
                 'dev_stage': img_dict['dev_stage'],
                 'mag': img_dict['mag'],
                 'probes': img_dict['probes']
@@ -594,6 +617,29 @@ class Application(tk.Frame):
             # update progress bar
             self.download_progress_bar.step()
             self.download_progress_bar.update()
+
+    def preprocess_images(self):
+        sorted_img_names = sorted(self.images.keys())
+
+        luminance_corrected_imgs = []
+        for img_name in sorted_img_names:
+            lum_corr_img = micap_utils.non_uniformity_correction(
+                self.images[img_name]['hsv_img']
+            )
+            luminance_corrected_imgs.append(lum_corr_img)
+
+        ref_img_idx = micap_utils.find_color_correction_reference(
+            luminance_corrected_imgs
+        )
+        self.ref_img_name = sorted_img_names[ref_img_idx]
+
+        corr_rgb_imgs = micap_utils.color_correction(
+            luminance_corrected_imgs,
+            ref_img_idx
+        )
+
+        for i, img_name in enumerate(sorted_img_names):
+            self.images[img_name]['corr_rgb_img'] = corr_rgb_imgs[i]
 
     # noinspection PyUnusedLocal
     def select_label(self, event):
