@@ -155,7 +155,7 @@ class Application(tk.Frame):
             selectbackground=HIGHLIGHT_COLOR,
             selectforeground='#ffffff'
         )
-        self.file_list_box.bind('<<ListboxSelect>>', self.select_file)
+        self.file_list_box.bind('<<ListboxSelect>>', self.select_image)
         file_scroll_bar.config(command=self.file_list_box.yview)
         file_scroll_bar.pack(side='right', fill='y')
         self.file_list_box.pack(fill='x', expand=True)
@@ -521,7 +521,7 @@ class Application(tk.Frame):
         )
 
     # noinspection PyUnusedLocal
-    def select_file(self, event):
+    def select_image(self, event):
         current_sel = self.file_list_box.curselection()
         self.current_img = self.file_list_box.get(current_sel[0])
         cv_img = cv2.imdecode(
@@ -546,7 +546,6 @@ class Application(tk.Frame):
             anchor=tk.NW,
             image=self.tk_image
         )
-
 
     def query_images(self):
         dev_stage = self.current_dev_stage.get()
