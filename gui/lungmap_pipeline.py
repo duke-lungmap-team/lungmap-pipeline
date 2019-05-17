@@ -69,7 +69,7 @@ class Application(tk.Frame):
         self.probe2_option = None
         self.probe3_option = None
         self.query_results_list_box = None
-        self.queried_images = []
+        self.queried_images = {}
         self.download_progress_bar = None
 
         main_frame = tk.Frame(self.master, bg=BACKGROUND_COLOR)
@@ -526,7 +526,7 @@ class Application(tk.Frame):
         self.current_img = self.file_list_box.get(current_sel[0])
         cv_img = cv2.imdecode(
             np.fromstring(
-                self.images[self.current_img],
+                self.images[self.current_img]['image_data'],
                 dtype=np.uint8
             ),
             cv2.IMREAD_COLOR
@@ -547,7 +547,6 @@ class Application(tk.Frame):
             image=self.tk_image
         )
 
-        self.select_label(event)
 
     def query_images(self):
         dev_stage = self.current_dev_stage.get()
@@ -559,24 +558,38 @@ class Application(tk.Frame):
 
         # TODO: show error dialog if any metadata field was not selected
 
-        self.queried_images = lungmap_utils.client.get_images_by_metadata(
+        lm_images = lungmap_utils.client.get_images_by_metadata(
             dev_stage, mag, probes
         )
-        # clear the list box
+
+        # clear the list box & queried_images
         self.query_results_list_box.delete(0, tk.END)
-        for img in self.queried_images:
+        self.queried_images = {}
+        for img in lm_images:
             url_parts = img['image_url']['value'].split('/')
             image_name = url_parts[-1]
+            self.queried_images[image_name] = {
+                'url': img['image_url']['value'],
+                'dev_stage': dev_stage,
+                'mag': mag,
+                'probes': probes
+            }
+
             self.query_results_list_box.insert(tk.END, image_name)
 
     def download_images(self):
         self.download_progress_bar.config(maximum=len(self.queried_images))
-        for img in self.queried_images:
+        for img_name, img_dict in self.queried_images.items():
             image_name, tmp_img = lungmap_utils.client.get_image_from_lungmap(
-                img['image_url']['value']
+                img_dict['url']
             )
 
-            self.images[image_name] = tmp_img
+            self.images[image_name] = {
+                'image_data': tmp_img,
+                'dev_stage': img_dict['dev_stage'],
+                'mag': img_dict['mag'],
+                'probes': img_dict['probes']
+            }
             self.file_list_box.insert(tk.END, image_name)
 
             # update progress bar
