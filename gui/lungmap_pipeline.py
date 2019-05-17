@@ -113,7 +113,7 @@ class Application(tk.Frame):
 
         save_regions_button = ttk.Button(
             file_chooser_button_frame,
-            text='Save Regions JSON',
+            text='Save Regions',
             command=self.save_regions_json
         )
         save_regions_button.pack(side=tk.RIGHT, anchor=tk.N)
@@ -304,7 +304,7 @@ class Application(tk.Frame):
             textvariable=self.current_mag,
             state='readonly'
         )
-        self.mag_option['values'] = sorted(MAG_VALUES)
+        self.mag_option['values'] = MAG_VALUES
         self.mag_option.pack(side=tk.RIGHT, fill='x', expand=False)
 
         probe1_frame = tk.Frame(
