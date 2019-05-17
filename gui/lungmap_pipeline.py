@@ -578,7 +578,7 @@ class Application(tk.Frame):
 
     def download_images(self):
         self.download_progress_bar.config(maximum=len(self.queried_images))
-        for img_name, img_dict in self.queried_images.items():
+        for img_name, img_dict in sorted(self.queried_images.items()):
             image_name, tmp_img = lungmap_utils.client.get_image_from_lungmap(
                 img_dict['url']
             )
