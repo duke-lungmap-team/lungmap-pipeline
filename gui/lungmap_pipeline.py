@@ -20,7 +20,7 @@ BORDER_COLOR = '#bebebe'
 HIGHLIGHT_COLOR = '#5294e2'
 
 WINDOW_WIDTH = 720
-WINDOW_HEIGHT = 720
+WINDOW_HEIGHT = 820
 
 PAD_SMALL = 2
 PAD_MEDIUM = 4
@@ -76,6 +76,7 @@ class Application(tk.Frame):
         self.current_probe3 = tk.StringVar(self.master)
         self.display_preprocessed = tk.BooleanVar(self.master)
         self.status_message = tk.StringVar(self.master)
+        self.current_label = tk.StringVar(self.master)
 
         self.dev_stage_option = None
         self.mag_option = None
@@ -149,16 +150,6 @@ class Application(tk.Frame):
         )
         save_regions_button.pack(side=tk.RIGHT, anchor=tk.N)
 
-        self.current_label = tk.StringVar(self.master)
-
-        self.label_option = ttk.Combobox(
-            file_chooser_button_frame,
-            textvariable=self.current_label,
-            state='readonly'
-        )
-        self.label_option.bind('<<ComboboxSelected>>', self.select_label)
-        self.label_option.pack(side=tk.RIGHT, fill='x', expand=False)
-
         file_chooser_button_frame.pack(
             anchor='n',
             fill='x',
@@ -206,10 +197,18 @@ class Application(tk.Frame):
             command=self.select_image
         )
         display_preprocessed_cb.pack(
-            anchor=tk.W,
+            side=tk.LEFT,
             pady=PAD_SMALL,
             padx=PAD_MEDIUM
         )
+
+        self.label_option = ttk.Combobox(
+            image_toolbar_frame,
+            textvariable=self.current_label,
+            state='readonly'
+        )
+        self.label_option.bind('<<ComboboxSelected>>', self.select_label)
+        self.label_option.pack(side=tk.RIGHT, fill='x', expand=False)
 
         # the canvas frame's contents will use grid b/c of the double
         # scrollbar (they don't look right using pack), but the canvas itself
