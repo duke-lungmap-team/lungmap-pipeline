@@ -1,6 +1,7 @@
 import tkinter as tk
 import ttkthemes as themed_tk
 from tkinter import filedialog, ttk
+import threading
 import PIL.Image
 import PIL.ImageTk
 import json
@@ -23,6 +24,7 @@ WINDOW_HEIGHT = 720
 
 PAD_SMALL = 2
 PAD_MEDIUM = 4
+PAD_LARGE = 8
 
 DEV_STAGES = [
     "E16.5",
@@ -51,6 +53,12 @@ class Application(tk.Frame):
         self.master.config(bg=BACKGROUND_COLOR)
         self.master.title("LungMAP Region Generator")
 
+        check_button_style = ttk.Style()
+        check_button_style.configure(
+            'Default.TCheckbutton',
+            background=BACKGROUND_COLOR
+        )
+
         self.images = {}
         self.image_dims = None
         self.lm_query_top = None
@@ -59,10 +67,15 @@ class Application(tk.Frame):
         self.tk_image = None
 
         self.current_dev_stage = tk.StringVar(self.master)
+        self.current_dev_stage.set(DEV_STAGES[0])
         self.current_mag = tk.StringVar(self.master)
+        self.current_mag.set(MAG_VALUES[0])
         self.current_probe1 = tk.StringVar(self.master)
+        self.current_probe1.set('Anti-Acta2')
         self.current_probe2 = tk.StringVar(self.master)
         self.current_probe3 = tk.StringVar(self.master)
+        self.display_preprocessed = tk.BooleanVar(self.master)
+        self.status_message = tk.StringVar(self.master)
 
         self.dev_stage_option = None
         self.mag_option = None
@@ -79,8 +92,8 @@ class Application(tk.Frame):
             fill='both',
             expand=True,
             anchor='n',
-            padx=PAD_MEDIUM,
-            pady=PAD_MEDIUM
+            padx=0,
+            pady=0
         )
 
         file_chooser_frame = tk.Frame(main_frame, bg=BACKGROUND_COLOR)
@@ -90,6 +103,15 @@ class Application(tk.Frame):
             anchor=tk.N,
             padx=PAD_MEDIUM,
             pady=PAD_MEDIUM
+        )
+
+        image_toolbar_frame = tk.Frame(main_frame, bg=BACKGROUND_COLOR)
+        image_toolbar_frame.pack(
+            fill=tk.X,
+            expand=False,
+            anchor=tk.N,
+            padx=PAD_LARGE,
+            pady=PAD_SMALL
         )
 
         bottom_frame = tk.Frame(main_frame, bg=BACKGROUND_COLOR)
@@ -113,12 +135,12 @@ class Application(tk.Frame):
         )
         add_image_button.pack(side=tk.LEFT)
 
-        preprocess_images_button = ttk.Button(
+        self.preprocess_images_button = ttk.Button(
             file_chooser_button_frame,
             text='Pre-process Images',
             command=self.preprocess_images
         )
-        preprocess_images_button.pack(side=tk.LEFT)
+        self.preprocess_images_button.pack(side=tk.LEFT)
 
         save_regions_button = ttk.Button(
             file_chooser_button_frame,
@@ -176,8 +198,18 @@ class Application(tk.Frame):
             pady=PAD_SMALL
         )
 
-        # TODO: put another toolbar here for image display options
-        # including whether to view orig or corrected image, zoom options, etc.
+        display_preprocessed_cb = ttk.Checkbutton(
+            image_toolbar_frame,
+            text="Display pre-processed image",
+            variable=self.display_preprocessed,
+            style='Default.TCheckbutton',
+            command=self.select_image
+        )
+        display_preprocessed_cb.pack(
+            anchor=tk.W,
+            pady=PAD_SMALL,
+            padx=PAD_MEDIUM
+        )
 
         # the canvas frame's contents will use grid b/c of the double
         # scrollbar (they don't look right using pack), but the canvas itself
@@ -228,6 +260,32 @@ class Application(tk.Frame):
 
         self.pan_start_x = None
         self.pan_start_y = None
+
+        status_frame = tk.Frame(main_frame)
+        status_frame.config(
+            highlightbackground=BORDER_COLOR,
+            highlightthickness=1
+        )
+        status_frame.pack(
+            fill='x',
+            expand=False,
+            anchor=tk.S,
+            padx=0,
+            pady=0
+        )
+
+        self.status_label = ttk.Label(
+            status_frame,
+            textvariable=self.status_message
+        )
+        self.status_label.config(background='#fafafa')
+        self.status_label.pack(
+            fill='x',
+            expand=False,
+            anchor=tk.W,
+            padx=0,
+            pady=0
+        )
 
         self.pack()
 
@@ -533,11 +591,17 @@ class Application(tk.Frame):
         )
 
     # noinspection PyUnusedLocal
-    def select_image(self, event):
+    def select_image(self, event=None):
         current_sel = self.file_list_box.curselection()
+
+        if len(current_sel) == 0:
+            return
         self.current_img = self.file_list_box.get(current_sel[0])
 
-        if self.images[self.current_img]['corr_rgb_img'] is not None:
+        has_corr = self.images[self.current_img]['corr_rgb_img'] is not None
+        display_corr = self.display_preprocessed.get()
+
+        if has_corr and display_corr:
             img_to_display = self.images[self.current_img]['corr_rgb_img']
         else:
             img_to_display = self.images[self.current_img]['rgb_img']
@@ -618,7 +682,7 @@ class Application(tk.Frame):
             self.download_progress_bar.step()
             self.download_progress_bar.update()
 
-    def preprocess_images(self):
+    def _preprocess_images(self):
         sorted_img_names = sorted(self.images.keys())
 
         luminance_corrected_imgs = []
@@ -640,6 +704,14 @@ class Application(tk.Frame):
 
         for i, img_name in enumerate(sorted_img_names):
             self.images[img_name]['corr_rgb_img'] = corr_rgb_imgs[i]
+
+        self.preprocess_images_button.config(state=tk.NORMAL)
+        self.status_message.set("Pre-processing finished")
+
+    def preprocess_images(self):
+        self.status_message.set("Pre-processing images...")
+        self.preprocess_images_button.config(state=tk.DISABLED)
+        threading.Thread(target=self._preprocess_images, daemon=True).start()
 
     # noinspection PyUnusedLocal
     def select_label(self, event):
