@@ -135,7 +135,7 @@ class Application(tk.Frame):
         add_image_button = ttk.Button(
             file_chooser_button_frame,
             text='Load Images',
-            command=self.query_lungmap_images
+            command=self.display_image_query_dialog
         )
         add_image_button.pack(side=tk.LEFT)
 
@@ -201,7 +201,6 @@ class Application(tk.Frame):
         )
         display_preprocessed_cb.pack(
             side=tk.LEFT,
-            pady=PAD_SMALL,
             padx=PAD_MEDIUM
         )
 
@@ -291,7 +290,7 @@ class Application(tk.Frame):
 
         self.pack()
 
-    def query_lungmap_images(self):
+    def display_image_query_dialog(self):
         lm_query_top = tk.Toplevel(bg=BACKGROUND_COLOR)
         lm_query_top.minsize(height=360, width=720)
 
@@ -551,92 +550,6 @@ class Application(tk.Frame):
             pady=PAD_MEDIUM
         )
 
-    def draw_polygon(self):
-        self.canvas.delete("poly")
-        pass
-
-    def on_pan_button_press(self, event):
-        self.canvas.config(cursor='fleur')
-
-        # starting position for panning
-        self.pan_start_x = int(self.canvas.canvasx(event.x))
-        self.pan_start_y = int(self.canvas.canvasy(event.y))
-
-    def pan_image(self, event):
-        self.canvas.scan_dragto(
-            event.x - self.pan_start_x,
-            event.y - self.pan_start_y,
-            gain=1
-        )
-
-    # noinspection PyUnusedLocal
-    def on_pan_button_release(self, event):
-        self.canvas.config(cursor='tcross')
-
-    def clear_drawn_regions(self):
-        self.canvas.delete("poly")
-
-    def save_regions_json(self):
-        save_file = filedialog.asksaveasfile(defaultextension=".json")
-        if save_file is None:
-            return
-
-        def my_converter(o):
-            if isinstance(o, np.ndarray):
-                return o.tolist()
-
-        json.dump(
-            self.img_region_lut,
-            save_file,
-            indent=2,
-            default=my_converter
-        )
-
-    # noinspection PyUnusedLocal
-    def select_image(self, event=None):
-        current_sel = self.file_list_box.curselection()
-
-        if len(current_sel) == 0:
-            return
-        self.current_img = self.file_list_box.get(current_sel[0])
-
-        has_corr = self.images[self.current_img]['corr_rgb_img'] is not None
-        display_corr = self.display_preprocessed.get()
-        dev_stage = self.images[self.current_img]['dev_stage']
-        mag = self.images[self.current_img]['mag']
-        probes = self.images[self.current_img]['probes']
-        structures = self.images[self.current_img]['probe_structure_map']
-
-        display_structures = set()
-
-        for probe, structure_map in structures.items():
-            for s in structure_map['surrounded_by']:
-                display_structures.add(s)
-            for s in structure_map['has_part']:
-                display_structures.add(s)
-
-        self.label_option['values'] = sorted(display_structures)
-
-        if has_corr and display_corr:
-            img_to_display = self.images[self.current_img]['corr_rgb_img']
-        else:
-            img_to_display = self.images[self.current_img]['rgb_img']
-
-        image = PIL.Image.fromarray(
-            img_to_display,
-            'RGB'
-        )
-        self.tk_image = PIL.ImageTk.PhotoImage(image)
-        height, width = image.size
-        self.image_dims = (height, width)
-        self.canvas.config(scrollregion=(0, 0, height, width))
-        self.canvas.create_image(
-            0,
-            0,
-            anchor=tk.NW,
-            image=self.tk_image
-        )
-
     def query_images(self):
         dev_stage = self.current_dev_stage.get()
         mag = self.current_mag.get()
@@ -739,6 +652,51 @@ class Application(tk.Frame):
         threading.Thread(target=self._preprocess_images, daemon=True).start()
 
     # noinspection PyUnusedLocal
+    def select_image(self, event=None):
+        current_sel = self.file_list_box.curselection()
+
+        if len(current_sel) == 0:
+            return
+        self.current_img = self.file_list_box.get(current_sel[0])
+
+        has_corr = self.images[self.current_img]['corr_rgb_img'] is not None
+        display_corr = self.display_preprocessed.get()
+        dev_stage = self.images[self.current_img]['dev_stage']
+        mag = self.images[self.current_img]['mag']
+        probes = self.images[self.current_img]['probes']
+        structures = self.images[self.current_img]['probe_structure_map']
+
+        display_structures = set()
+
+        for probe, structure_map in structures.items():
+            for s in structure_map['surrounded_by']:
+                display_structures.add(s)
+            for s in structure_map['has_part']:
+                display_structures.add(s)
+
+        self.label_option['values'] = sorted(display_structures)
+
+        if has_corr and display_corr:
+            img_to_display = self.images[self.current_img]['corr_rgb_img']
+        else:
+            img_to_display = self.images[self.current_img]['rgb_img']
+
+        image = PIL.Image.fromarray(
+            img_to_display,
+            'RGB'
+        )
+        self.tk_image = PIL.ImageTk.PhotoImage(image)
+        height, width = image.size
+        self.image_dims = (height, width)
+        self.canvas.config(scrollregion=(0, 0, height, width))
+        self.canvas.create_image(
+            0,
+            0,
+            anchor=tk.NW,
+            image=self.tk_image
+        )
+
+    # noinspection PyUnusedLocal
     def select_label(self, event):
         self.clear_drawn_regions()
 
@@ -746,6 +704,47 @@ class Application(tk.Frame):
 
         if label not in self.img_region_lut[self.current_img]:
             return
+
+    def draw_polygon(self):
+        self.canvas.delete("poly")
+        pass
+
+    def on_pan_button_press(self, event):
+        self.canvas.config(cursor='fleur')
+
+        # starting position for panning
+        self.pan_start_x = int(self.canvas.canvasx(event.x))
+        self.pan_start_y = int(self.canvas.canvasy(event.y))
+
+    def pan_image(self, event):
+        self.canvas.scan_dragto(
+            event.x - self.pan_start_x,
+            event.y - self.pan_start_y,
+            gain=1
+        )
+
+    # noinspection PyUnusedLocal
+    def on_pan_button_release(self, event):
+        self.canvas.config(cursor='tcross')
+
+    def clear_drawn_regions(self):
+        self.canvas.delete("poly")
+
+    def save_regions_json(self):
+        save_file = filedialog.asksaveasfile(defaultextension=".json")
+        if save_file is None:
+            return
+
+        def my_converter(o):
+            if isinstance(o, np.ndarray):
+                return o.tolist()
+
+        json.dump(
+            self.img_region_lut,
+            save_file,
+            indent=2,
+            default=my_converter
+        )
 
     # noinspection PyUnusedLocal
     def select_region(self, event):
