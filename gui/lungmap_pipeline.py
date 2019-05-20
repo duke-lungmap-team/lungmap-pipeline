@@ -7,7 +7,7 @@ import PIL.ImageTk
 import json
 import numpy as np
 import lungmap_utils
-from micap import utils as micap_utils
+from micap import utils as micap_utils, pipeline
 from gui import utils as gui_utils
 
 ontology = gui_utils.onto
@@ -65,7 +65,7 @@ class Application(tk.Frame):
         self.images = {}
         self.image_dims = None
         self.lm_query_top = None
-        self.img_region_lut = None
+        self.img_region_lut = {}
         self.current_img = None
         self.tk_image = None
 
@@ -577,11 +577,19 @@ class Application(tk.Frame):
         for img in lm_images:
             url_parts = img['image_url']['value'].split('/')
             image_name = url_parts[-1]
+
+            probe_colors = [
+                img['color1']['value'],
+                img['color2']['value'],
+                img['color3']['value']
+            ]
+
             self.queried_images[image_name] = {
                 'url': img['image_url']['value'],
                 'dev_stage': dev_stage,
                 'mag': mag,
                 'probes': probes,
+                'probe_colors': probe_colors,
                 'probe_structure_map': probe_structure_dict
             }
 
@@ -612,6 +620,7 @@ class Application(tk.Frame):
                 'dev_stage': img_dict['dev_stage'],
                 'mag': img_dict['mag'],
                 'probes': img_dict['probes'],
+                'probe_colors': img_dict['probe_colors'],
                 'probe_structure_map': img_dict['probe_structure_map']
             }
             self.file_list_box.insert(tk.END, image_name)
@@ -661,9 +670,6 @@ class Application(tk.Frame):
 
         has_corr = self.images[self.current_img]['corr_rgb_img'] is not None
         display_corr = self.display_preprocessed.get()
-        dev_stage = self.images[self.current_img]['dev_stage']
-        mag = self.images[self.current_img]['mag']
-        probes = self.images[self.current_img]['probes']
         structures = self.images[self.current_img]['probe_structure_map']
 
         display_structures = set()
