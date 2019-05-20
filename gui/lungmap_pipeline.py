@@ -8,6 +8,9 @@ import json
 import numpy as np
 import lungmap_utils
 from micap import utils as micap_utils
+from gui import utils as gui_utils
+
+ontology = gui_utils.onto
 
 # weird import style to un-confuse PyCharm
 try:
@@ -599,6 +602,20 @@ class Application(tk.Frame):
 
         has_corr = self.images[self.current_img]['corr_rgb_img'] is not None
         display_corr = self.display_preprocessed.get()
+        dev_stage = self.images[self.current_img]['dev_stage']
+        mag = self.images[self.current_img]['mag']
+        probes = self.images[self.current_img]['probes']
+        structures = self.images[self.current_img]['probe_structure_map']
+
+        display_structures = set()
+
+        for probe, structure_map in structures.items():
+            for s in structure_map['surrounded_by']:
+                display_structures.add(s)
+            for s in structure_map['has_part']:
+                display_structures.add(s)
+
+        self.label_option['values'] = sorted(display_structures)
 
         if has_corr and display_corr:
             img_to_display = self.images[self.current_img]['corr_rgb_img']
@@ -634,6 +651,13 @@ class Application(tk.Frame):
             dev_stage, mag, probes
         )
 
+        # will query ontology structures here b/c we can do it once for
+        # all these images instead of for each image
+        probe_structure_dict = gui_utils.get_probe_structure_map(
+            ontology,
+            probes
+        )
+
         # clear the list box & queried_images
         self.query_results_list_box.delete(0, tk.END)
         self.queried_images = {}
@@ -644,7 +668,8 @@ class Application(tk.Frame):
                 'url': img['image_url']['value'],
                 'dev_stage': dev_stage,
                 'mag': mag,
-                'probes': probes
+                'probes': probes,
+                'probe_structure_map': probe_structure_dict
             }
 
             self.query_results_list_box.insert(tk.END, image_name)
@@ -673,7 +698,8 @@ class Application(tk.Frame):
                 'corr_rgb_img': None,
                 'dev_stage': img_dict['dev_stage'],
                 'mag': img_dict['mag'],
-                'probes': img_dict['probes']
+                'probes': img_dict['probes'],
+                'probe_structure_map': img_dict['probe_structure_map']
             }
             self.file_list_box.insert(tk.END, image_name)
 
