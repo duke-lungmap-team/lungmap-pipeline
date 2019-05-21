@@ -58,6 +58,15 @@ SCALE_VALUES = [
 PROBES = lungmap_utils.client.get_probes()
 
 
+class ProgressCallable(object):
+    def __init__(self, progress_var):
+        self.progress_var = progress_var
+
+    def __call__(self, progress):
+        scaled_progress = int(progress * 100)
+        self.progress_var.set(scaled_progress)
+
+
 class Application(tk.Frame):
 
     def __init__(self, master):
@@ -96,6 +105,7 @@ class Application(tk.Frame):
         self.current_label = tk.StringVar(self.master)
         self.canvas_scale = tk.StringVar(self.master)
         self.canvas_scale.set('1.00')
+        self.status_progress = tk.IntVar(self.master)
 
         self.dev_stage_option = None
         self.mag_option = None
@@ -385,6 +395,24 @@ class Application(tk.Frame):
         self.pan_start_x = None
         self.pan_start_y = None
 
+        status_progress_frame = tk.Frame(main_frame, bg=BACKGROUND_COLOR)
+        status_progress_frame.pack(
+            fill='x',
+            expand=False,
+            anchor=tk.S,
+            padx=PAD_SMALL,
+            pady=PAD_SMALL
+        )
+        self.status_progress_bar = ttk.Progressbar(
+            status_progress_frame,
+            variable=self.status_progress
+        )
+        self.status_progress_bar.pack(
+            anchor=tk.S,
+            fill='x',
+            expand=False
+        )
+
         status_frame = tk.Frame(main_frame)
         status_frame.config(
             highlightbackground=BORDER_COLOR,
@@ -397,9 +425,6 @@ class Application(tk.Frame):
             padx=0,
             pady=0
         )
-
-        # TODO: add a progress bar to the status frame for a better
-        # indication to the user that something is happening
 
         self.status_label = ttk.Label(
             status_frame,
@@ -758,6 +783,11 @@ class Application(tk.Frame):
     def _preprocess_images(self):
         sorted_img_names = sorted(self.images.keys())
 
+        # for progress status updates
+        process_count = len(sorted_img_names) * 2
+        progress = 0
+        self.status_progress.set(0)
+
         luminance_corrected_imgs = []
         for img_name in sorted_img_names:
             lum_corr_img = micap_utils.non_uniformity_correction(
@@ -765,10 +795,18 @@ class Application(tk.Frame):
             )
             luminance_corrected_imgs.append(lum_corr_img)
 
+            progress += 1
+            scaled_progress = int((progress / float(process_count)) * 100)
+            self.status_progress.set(scaled_progress)
+
         ref_img_idx = micap_utils.find_color_correction_reference(
             luminance_corrected_imgs
         )
         self.ref_img_name = sorted_img_names[ref_img_idx]
+
+        progress += 1
+        scaled_progress = int((progress / float(process_count)) * 100)
+        self.status_progress.set(scaled_progress)
 
         corr_rgb_imgs = micap_utils.color_correction(
             luminance_corrected_imgs,
@@ -777,6 +815,8 @@ class Application(tk.Frame):
 
         for i, img_name in enumerate(sorted_img_names):
             self.images[img_name]['corr_rgb_img'] = corr_rgb_imgs[i]
+
+        self.status_progress.set(100)
 
         self.preprocess_images_button.config(state=tk.NORMAL)
         self.status_message.set("Pre-processing finished")
@@ -910,13 +950,15 @@ class Application(tk.Frame):
     def run_segmentation(self, hsv_img, seg_config, cell_size):
         if self.current_img not in self.img_region_lut:
             self.img_region_lut[self.current_img] = {}
+        progress_callback = ProgressCallable(self.status_progress)
         candidates = pipeline.generate_structure_candidates(
             hsv_img,
             seg_config,
             filter_min_size=3 * cell_size,
             dog_factor=7,
             process_residual=False,
-            plot=False
+            plot=False,
+            progress_callback=progress_callback
         )
 
         self.img_region_lut[self.current_img]['candidates'] = candidates
@@ -927,7 +969,7 @@ class Application(tk.Frame):
         )
 
         self.draw_regions()
-
+        self.status_progress = 0
         self.find_regions_button.config(state=tk.NORMAL)
 
     def find_regions(self):
