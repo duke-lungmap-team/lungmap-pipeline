@@ -1,3 +1,6 @@
 .idea
 data
 tmp
+*.pkl
+*.json
+__pycache__
