@@ -267,6 +267,7 @@ class Application(tk.Frame):
         self.scrollbar_v.grid(row=0, column=1, sticky=tk.N + tk.S)
         self.scrollbar_h.grid(row=1, column=0, sticky=tk.E + tk.W)
 
+        self.canvas.bind("<Button-1>", self.select_region)
         self.canvas.bind("<ButtonPress-2>", self.on_pan_button_press)
         self.canvas.bind("<B2-Motion>", self.pan_image)
         self.canvas.bind("<ButtonRelease-2>", self.on_pan_button_release)
@@ -716,8 +717,12 @@ class Application(tk.Frame):
             anchor=tk.NW,
             image=self.tk_image
         )
+        self.draw_regions()
 
     def draw_regions(self):
+        if self.current_img not in self.img_region_lut:
+            return
+
         img_region_map = self.img_region_lut[self.current_img]
         candidates = img_region_map['candidates']
         labels = img_region_map['labels']
@@ -729,26 +734,48 @@ class Application(tk.Frame):
             current_label_code = self.label_option['values'].index(current_label)
             current_label_code += 1
 
+        current_count = 0
+        other_count = 0
+        unlabelled_count = 0
+
         for i, c in enumerate(candidates):
             # label codes:
             #     candidate == 0 (means an unlabelled region)
             #     >0 means sorted labels index + 1
             if labels[i] == 0:
                 region_type = 'candidate'
+                stipple = None
+                fill = ''
+                unlabelled_count += 1
             elif labels[i] == current_label_code:
                 region_type = 'current_label'
+                stipple = 'gray12'
+                fill = REGION_COLORS[region_type]
+                current_count += 1
             else:
                 region_type = 'other_label'
+                stipple = 'gray25'
+                fill = REGION_COLORS[region_type]
+                other_count += 1
 
             self.canvas.create_polygon(
                 list(c.flatten()),
                 tags=("poly", str(i)),
-                fill='',
+                fill=fill,
                 outline=REGION_COLORS[region_type],
-                width=5
+                width=5,
+                stipple=stipple
             )
 
-        self.status_message.set("Displaying %d regions" % len(candidates))
+        self.status_message.set(
+            "Displaying %d regions, %d %s, %d other labels, %d unlabelled" % (
+                len(candidates),
+                current_count,
+                current_label,
+                other_count,
+                unlabelled_count
+            )
+        )
 
     def run_segmentation(self, hsv_img, seg_config, cell_size):
         if self.current_img not in self.img_region_lut:
@@ -868,15 +895,7 @@ class Application(tk.Frame):
     # noinspection PyUnusedLocal
     def select_label(self, event):
         self.clear_drawn_regions()
-
-        label = self.current_label.get()
-
-        if label not in self.img_region_lut[self.current_img]:
-            return
-
-    def draw_polygon(self):
-        self.canvas.delete("poly")
-        pass
+        self.draw_regions()
 
     def on_pan_button_press(self, event):
         self.canvas.config(cursor='fleur')
@@ -917,7 +936,32 @@ class Application(tk.Frame):
 
     # noinspection PyUnusedLocal
     def select_region(self, event):
-        pass
+        # first, check if a label has been selected. If not, do nothing.
+        # If it has, determing the label code
+        current_label = self.current_label.get()
+        if current_label == '':
+            return
+
+        current_label_code = self.label_option['values'].index(current_label)
+        current_label_code += 1
+
+        # Next, check that the object is a polygon by the 'poly' tag we added
+        current_cv_obj = self.canvas.find_withtag(tk.CURRENT)
+        tags = self.canvas.gettags(current_cv_obj[0])
+
+        if 'poly' not in tags:
+            return
+
+        # if it has a 'poly' tag, then the 2nd tag is our ID (index)
+        # Set the corresponding region label to the current label idx + 1
+        region_idx = int(tags[1])
+        img_region_map = self.img_region_lut[self.current_img]
+        labels = img_region_map['labels']
+        labels[region_idx] = current_label_code
+
+        # finally, redraw regions
+        self.clear_drawn_regions()
+        self.draw_regions()
 
 
 root = themed_tk.ThemedTk()
