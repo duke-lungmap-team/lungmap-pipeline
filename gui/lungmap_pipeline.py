@@ -27,8 +27,8 @@ REGION_COLORS = {
     'other_label': '#ff00ff'
 }
 
-WINDOW_WIDTH = 720
-WINDOW_HEIGHT = 820
+WINDOW_WIDTH = 820
+WINDOW_HEIGHT = 920
 
 PAD_SMALL = 2
 PAD_MEDIUM = 4
@@ -90,6 +90,8 @@ class Application(tk.Frame):
         self.current_probe2 = tk.StringVar(self.master)
         self.current_probe3 = tk.StringVar(self.master)
         self.display_preprocessed = tk.BooleanVar(self.master)
+        self.hide_other = tk.BooleanVar(self.master)
+        self.hide_unlabelled = tk.BooleanVar(self.master)
         self.status_message = tk.StringVar(self.master)
         self.current_label = tk.StringVar(self.master)
         self.canvas_scale = tk.StringVar(self.master)
@@ -241,7 +243,8 @@ class Application(tk.Frame):
         ).pack(
             side=tk.LEFT,
             fill='none',
-            expand=False
+            expand=False,
+            padx=PAD_MEDIUM
         )
         scale_option = ttk.Combobox(
             image_toolbar_frame,
@@ -254,7 +257,50 @@ class Application(tk.Frame):
         scale_option.pack(
             side=tk.LEFT,
             fill='none',
-            expand=False
+            expand=False,
+            padx=PAD_MEDIUM
+        )
+
+        ttk.Separator(
+            image_toolbar_frame,
+            orient=tk.VERTICAL
+        ).pack(
+            side=tk.LEFT,
+            fill='y',
+            padx=PAD_MEDIUM
+        )
+
+        hide_other_cb = ttk.Checkbutton(
+            image_toolbar_frame,
+            text="Hide other labels",
+            variable=self.hide_other,
+            style='Default.TCheckbutton',
+            command=self.select_image
+        )
+        hide_other_cb.pack(
+            side=tk.LEFT,
+            padx=PAD_MEDIUM
+        )
+
+        ttk.Separator(
+            image_toolbar_frame,
+            orient=tk.VERTICAL
+        ).pack(
+            side=tk.LEFT,
+            fill='y',
+            padx=PAD_MEDIUM
+        )
+
+        hide_unlabelled_cb = ttk.Checkbutton(
+            image_toolbar_frame,
+            text="Hide unlabelled",
+            variable=self.hide_unlabelled,
+            style='Default.TCheckbutton',
+            command=self.select_image
+        )
+        hide_unlabelled_cb.pack(
+            side=tk.LEFT,
+            padx=PAD_MEDIUM
         )
 
         self.label_option = ttk.Combobox(
@@ -264,6 +310,26 @@ class Application(tk.Frame):
         )
         self.label_option.bind('<<ComboboxSelected>>', self.select_label)
         self.label_option.pack(side=tk.RIGHT, fill='x', expand=False)
+
+        ttk.Label(
+            image_toolbar_frame,
+            text="Assign label:",
+            background=BACKGROUND_COLOR
+        ).pack(
+            side=tk.RIGHT,
+            fill='none',
+            expand=False,
+            padx=PAD_MEDIUM
+        )
+
+        ttk.Separator(
+            image_toolbar_frame,
+            orient=tk.VERTICAL
+        ).pack(
+            side=tk.RIGHT,
+            fill='y',
+            padx=PAD_MEDIUM
+        )
 
         # the canvas frame's contents will use grid b/c of the double
         # scrollbar (they don't look right using pack), but the canvas itself
@@ -312,6 +378,9 @@ class Application(tk.Frame):
         self.canvas.bind("<ButtonPress-2>", self.on_pan_button_press)
         self.canvas.bind("<B2-Motion>", self.pan_image)
         self.canvas.bind("<ButtonRelease-2>", self.on_pan_button_release)
+        self.canvas.bind("<ButtonPress-3>", self.on_pan_button_press)
+        self.canvas.bind("<B3-Motion>", self.pan_image)
+        self.canvas.bind("<ButtonRelease-3>", self.on_pan_button_release)
 
         self.pan_start_x = None
         self.pan_start_y = None
@@ -785,6 +854,9 @@ class Application(tk.Frame):
             current_label_code = self.label_option['values'].index(current_label)
             current_label_code += 1
 
+        hide_other = self.hide_other.get()
+        hide_unlabelled = self.hide_unlabelled.get()
+
         current_count = 0
         other_count = 0
         unlabelled_count = 0
@@ -808,6 +880,11 @@ class Application(tk.Frame):
                 stipple = 'gray25'
                 fill = REGION_COLORS[region_type]
                 other_count += 1
+
+            if hide_other and region_type == 'other_label':
+                continue
+            if hide_unlabelled and region_type == 'candidate':
+                continue
 
             self.canvas.create_polygon(
                 list(c.flatten()),
