@@ -969,7 +969,7 @@ class Application(tk.Frame):
         )
 
         self.draw_regions()
-        self.status_progress = 0
+        self.status_progress.set(0)
         self.find_regions_button.config(state=tk.NORMAL)
 
     def find_regions(self):
