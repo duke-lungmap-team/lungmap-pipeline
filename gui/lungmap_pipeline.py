@@ -21,6 +21,11 @@ except ImportError:
 BACKGROUND_COLOR = '#ededed'
 BORDER_COLOR = '#bebebe'
 HIGHLIGHT_COLOR = '#5294e2'
+REGION_COLORS = {
+    'candidate': '#ff8000',
+    'current_label': '#00ff00',
+    'other_label': '#ff00ff'
+}
 
 WINDOW_WIDTH = 720
 WINDOW_HEIGHT = 820
@@ -192,6 +197,13 @@ class Application(tk.Frame):
             pady=PAD_SMALL
         )
 
+        self.find_regions_button = ttk.Button(
+            image_toolbar_frame,
+            text='Find Regions',
+            command=self.find_regions
+        )
+        self.find_regions_button.pack(side=tk.LEFT, anchor=tk.N)
+
         display_preprocessed_cb = ttk.Checkbutton(
             image_toolbar_frame,
             text="Display pre-processed image",
@@ -274,6 +286,9 @@ class Application(tk.Frame):
             padx=0,
             pady=0
         )
+
+        # TODO: add a progress bar to the status frame for a better
+        # indication to the user that something is happening
 
         self.status_label = ttk.Label(
             status_frame,
@@ -701,6 +716,154 @@ class Application(tk.Frame):
             anchor=tk.NW,
             image=self.tk_image
         )
+
+    def draw_regions(self):
+        img_region_map = self.img_region_lut[self.current_img]
+        candidates = img_region_map['candidates']
+        labels = img_region_map['labels']
+
+        current_label = self.current_label.get()
+        if current_label == '':
+            current_label_code = -1
+        else:
+            current_label_code = self.label_option['values'].index(current_label)
+            current_label_code += 1
+
+        for i, c in enumerate(candidates):
+            # label codes:
+            #     candidate == 0 (means an unlabelled region)
+            #     >0 means sorted labels index + 1
+            if labels[i] == 0:
+                region_type = 'candidate'
+            elif labels[i] == current_label_code:
+                region_type = 'current_label'
+            else:
+                region_type = 'other_label'
+
+            self.canvas.create_polygon(
+                list(c.flatten()),
+                tags=("poly", str(i)),
+                fill='',
+                outline=REGION_COLORS[region_type],
+                width=5
+            )
+
+        self.status_message.set("Displaying %d regions" % len(candidates))
+
+    def run_segmentation(self, hsv_img, seg_config, cell_size):
+        if self.current_img not in self.img_region_lut:
+            self.img_region_lut[self.current_img] = {}
+        candidates = pipeline.generate_structure_candidates(
+            hsv_img,
+            seg_config,
+            filter_min_size=3 * cell_size,
+            dog_factor=7,
+            process_residual=False,
+            plot=False
+        )
+
+        self.img_region_lut[self.current_img]['candidates'] = candidates
+
+        # candidate label = 0, structure labels = 1 -> len(structures)
+        self.img_region_lut[self.current_img]['labels'] = list(
+            np.zeros(len(candidates))
+        )
+
+        self.draw_regions()
+
+        self.find_regions_button.config(state=tk.NORMAL)
+
+    def find_regions(self):
+        # build micap pipeline, w/ seg stages based on 'has_part'
+        # and 'surrounded_by' probe/structure mappings
+
+        # build seg config for current image
+        probes = self.images[self.current_img]['probes']
+        probe_colors = [
+            c.lower() for c in self.images[self.current_img]['probe_colors']
+        ]
+        probe_structure_map = self.images[self.current_img]['probe_structure_map']
+
+        has_part_colors = set()
+
+        for i, p in enumerate(probes):
+            ps_map = probe_structure_map[p]
+
+            if len(ps_map['has_part']) > 0:
+                has_part_colors.add(probe_colors[i])
+
+        non_has_part_colors = set(probe_colors).difference(has_part_colors)
+
+        # because DAPI is blue, probe colors can get slightly mixed with blue
+        # so we'll add the blue-ish version of each color for better results
+        if 'green' in has_part_colors:
+            has_part_colors.add('cyan')
+        if 'red' in has_part_colors:
+            has_part_colors.add('violet')
+        if 'white' in has_part_colors:
+            has_part_colors.add('gray')
+
+        if 'green' in non_has_part_colors:
+            non_has_part_colors.add('cyan')
+        if 'red' in non_has_part_colors:
+            non_has_part_colors.add('violet')
+        if 'white' in non_has_part_colors:
+            non_has_part_colors.add('gray')
+
+        cell_radius = 16
+        cell_size = np.pi * (cell_radius ** 2)
+
+        seg_config = [
+            # 1st seg stage uses 'has_part colors'
+            {
+                'type': 'color',
+                'args': {
+                    'blur_kernel': (15, 15),
+                    'min_size': 3 * cell_size,
+                    'max_size': None,
+                    'colors': has_part_colors
+                }
+            },
+            # 2nd - 4th stages are saturation stages of descending sizes
+            {
+                'type': 'saturation',
+                'args': {'blur_kernel': (95, 95), 'min_size': 3 * cell_size, 'max_size': None}
+            },
+            {
+                'type': 'saturation',
+                'args': {'blur_kernel': (31, 31), 'min_size': 3 * cell_size, 'max_size': None}
+            },
+            {
+                'type': 'saturation',
+                'args': {'blur_kernel': (15, 15), 'min_size': 3 * cell_size, 'max_size': None}
+            },
+            # final stage is a color stage on the non has part colors
+            {
+                'type': 'color',
+                'args': {
+                    'blur_kernel': (7, 7),
+                    'min_size': 3 * cell_size,
+                    'max_size': None,
+                    'colors': non_has_part_colors
+                }
+            },
+        ]
+
+        if self.images[self.current_img]['corr_rgb_img'] is not None:
+            hsv_img = cv2.cvtColor(
+                self.images[self.current_img]['corr_rgb_img'],
+                cv2.COLOR_RGB2HSV
+            )
+        else:
+            hsv_img = self.images[self.current_img]['hsv_img']
+
+        self.status_message.set("Finding regions...")
+        self.find_regions_button.config(state=tk.DISABLED)
+        threading.Thread(
+            target=self.run_segmentation,
+            args=(hsv_img, seg_config, cell_size),
+            daemon=True
+        ).start()
 
     # noinspection PyUnusedLocal
     def select_label(self, event):
