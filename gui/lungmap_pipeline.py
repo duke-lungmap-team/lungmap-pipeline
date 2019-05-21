@@ -618,7 +618,7 @@ class Application(tk.Frame):
             )
 
             cv_img = cv2.imdecode(
-                np.fromstring(
+                np.frombuffer(
                     tmp_img,
                     dtype=np.uint8
                 ),
