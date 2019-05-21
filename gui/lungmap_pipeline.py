@@ -48,6 +48,13 @@ MAG_VALUES = [
     "100X"
 ]
 
+SCALE_VALUES = [
+    "0.25",
+    "0.50",
+    "0.75",
+    "1.00"
+]
+
 PROBES = lungmap_utils.client.get_probes()
 
 
@@ -85,6 +92,8 @@ class Application(tk.Frame):
         self.display_preprocessed = tk.BooleanVar(self.master)
         self.status_message = tk.StringVar(self.master)
         self.current_label = tk.StringVar(self.master)
+        self.canvas_scale = tk.StringVar(self.master)
+        self.canvas_scale.set('1.00')
 
         self.dev_stage_option = None
         self.mag_option = None
@@ -214,6 +223,38 @@ class Application(tk.Frame):
         display_preprocessed_cb.pack(
             side=tk.LEFT,
             padx=PAD_MEDIUM
+        )
+
+        ttk.Separator(
+            image_toolbar_frame,
+            orient=tk.VERTICAL
+        ).pack(
+            side=tk.LEFT,
+            fill='y',
+            padx=PAD_MEDIUM
+        )
+
+        ttk.Label(
+            image_toolbar_frame,
+            text="Scale image:",
+            background=BACKGROUND_COLOR
+        ).pack(
+            side=tk.LEFT,
+            fill='none',
+            expand=False
+        )
+        scale_option = ttk.Combobox(
+            image_toolbar_frame,
+            values=SCALE_VALUES,
+            textvariable=self.canvas_scale,
+            state='readonly',
+            width=4
+        )
+        scale_option.bind('<<ComboboxSelected>>', self.select_image)
+        scale_option.pack(
+            side=tk.LEFT,
+            fill='none',
+            expand=False
         )
 
         self.label_option = ttk.Combobox(
@@ -707,8 +748,16 @@ class Application(tk.Frame):
             img_to_display,
             'RGB'
         )
-        self.tk_image = PIL.ImageTk.PhotoImage(image)
         height, width = image.size
+        canvas_scale = float(self.canvas_scale.get())
+        image = image.resize(
+            (
+                int(height * canvas_scale),
+                int(width * canvas_scale)
+            )
+        )
+        height, width = image.size
+        self.tk_image = PIL.ImageTk.PhotoImage(image)
         self.image_dims = (height, width)
         self.canvas.config(scrollregion=(0, 0, height, width))
         self.canvas.create_image(
@@ -726,6 +775,8 @@ class Application(tk.Frame):
         img_region_map = self.img_region_lut[self.current_img]
         candidates = img_region_map['candidates']
         labels = img_region_map['labels']
+
+        canvas_scale = float(self.canvas_scale.get())
 
         current_label = self.current_label.get()
         if current_label == '':
@@ -763,9 +814,11 @@ class Application(tk.Frame):
                 tags=("poly", str(i)),
                 fill=fill,
                 outline=REGION_COLORS[region_type],
-                width=5,
+                width=np.ceil(5 * canvas_scale),
                 stipple=stipple
             )
+
+        self.canvas.scale(tk.ALL, 0, 0, canvas_scale, canvas_scale)
 
         self.status_message.set(
             "Displaying %d regions, %d %s, %d other labels, %d unlabelled" % (
@@ -803,6 +856,10 @@ class Application(tk.Frame):
     def find_regions(self):
         # build micap pipeline, w/ seg stages based on 'has_part'
         # and 'surrounded_by' probe/structure mappings
+
+        # first, check that an image is selected
+        if self.current_img is None:
+            return
 
         # build seg config for current image
         probes = self.images[self.current_img]['probes']
