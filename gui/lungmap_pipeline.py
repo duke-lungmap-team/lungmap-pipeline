@@ -77,8 +77,8 @@ class Application(tk.Frame):
         self.master.config(bg=BACKGROUND_COLOR)
         self.master.title("LungMAP Region Generator")
 
-        check_button_style = ttk.Style()
-        check_button_style.configure(
+        my_styles = ttk.Style()
+        my_styles.configure(
             'Default.TCheckbutton',
             background=BACKGROUND_COLOR
         )
@@ -104,7 +104,7 @@ class Application(tk.Frame):
         self.status_message = tk.StringVar(self.master)
         self.current_label = tk.StringVar(self.master)
         self.canvas_scale = tk.StringVar(self.master)
-        self.canvas_scale.set('1.00')
+        self.canvas_scale.set('0.50')
         self.status_progress = tk.IntVar(self.master)
 
         self.dev_stage_option = None
