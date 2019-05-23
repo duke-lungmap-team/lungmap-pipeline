@@ -391,14 +391,15 @@ class Application(tk.Frame):
             pady=PAD_MEDIUM
         )
 
-        display_preprocessed_cb = ttk.Checkbutton(
+        self.display_preprocessed_cb = ttk.Checkbutton(
             display_opt_frame,
             text="Display pre-processed image",
             variable=self.display_preprocessed,
             style='Default.TCheckbutton',
             command=self.select_image
         )
-        display_preprocessed_cb.pack(
+        self.display_preprocessed_cb.state(['disabled'])
+        self.display_preprocessed_cb.pack(
             anchor=tk.W,
             side=tk.TOP,
             padx=PAD_MEDIUM,
@@ -911,6 +912,8 @@ class Application(tk.Frame):
         self.preprocess_images_button.config(state=tk.NORMAL)
         self.status_message.set("Pre-processing finished")
 
+        self.select_image()
+
     def preprocess_images(self):
         self.status_message.set("Pre-processing images...")
         self.preprocess_images_button.config(state=tk.DISABLED)
@@ -925,9 +928,15 @@ class Application(tk.Frame):
         self.current_img = self.file_list_box.get(current_sel[0])
 
         has_corr = self.images[self.current_img]['corr_rgb_img'] is not None
+
+        if not has_corr:
+            self.display_preprocessed.set(False)
+            self.display_preprocessed_cb.state(['disabled'])
+        else:
+            self.display_preprocessed_cb.state(['!disabled'])
+
         display_corr = self.display_preprocessed.get()
         structures = self.images[self.current_img]['probe_structure_map']
-
         display_structures = set()
 
         for probe, structure_map in structures.items():
