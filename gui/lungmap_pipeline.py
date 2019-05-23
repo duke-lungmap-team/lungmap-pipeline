@@ -878,12 +878,12 @@ class Application(tk.Frame):
         self.draw_regions()
 
     def draw_regions(self):
-        if self.current_img not in self.img_region_lut:
+        try:
+            img_region_map = self.img_region_lut[self.current_img]
+            candidates = img_region_map['candidates']
+            labels = img_region_map['labels']
+        except KeyError:
             return
-
-        img_region_map = self.img_region_lut[self.current_img]
-        candidates = img_region_map['candidates']
-        labels = img_region_map['labels']
 
         canvas_scale = float(self.canvas_scale.get())
 
