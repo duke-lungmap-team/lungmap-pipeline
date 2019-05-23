@@ -114,6 +114,7 @@ class Application(tk.Frame):
         self.canvas_scale = tk.StringVar(self.master)
         self.canvas_scale.set('0.50')
         self.status_progress = tk.IntVar(self.master)
+        self.query_status_var = tk.StringVar(self.master)
 
         self.dev_stage_option = None
         self.mag_option = None
@@ -656,15 +657,29 @@ class Application(tk.Frame):
             fill='x',
             expand=False,
             anchor=tk.N,
-            padx=PAD_SMALL,
-            pady=PAD_SMALL
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
         )
         query_button = ttk.Button(
             query_button_frame,
             text="Run Query",
             command=self.query_images
         )
-        query_button.pack(anchor=tk.E)
+        query_button.pack(
+            anchor=tk.E,
+            side=tk.RIGHT
+        )
+        self.query_status_var.set('')
+        query_status_label = ttk.Label(
+            query_button_frame,
+            textvariable=self.query_status_var,
+            background=BACKGROUND_COLOR
+        )
+        query_status_label.pack(
+            side=tk.RIGHT,
+            fill=tk.X,
+            padx=PAD_MEDIUM
+        )
 
         file_chooser_frame = tk.Frame(lm_query_top, bg=BACKGROUND_COLOR)
         file_chooser_frame.pack(
@@ -756,7 +771,17 @@ class Application(tk.Frame):
         probe3 = self.current_probe3.get()
         probes = [probe1, probe2, probe3]
 
-        # TODO: show error dialog if any metadata field was not selected
+        all_options = [dev_stage, mag]
+        all_options.extend(probes)
+
+        if '' in all_options:
+            self.query_status_var.set(
+                "All the above options are required"
+            )
+            return
+        else:
+            self.query_status_var.set('')
+            self.update()
 
         lm_images = lungmap_utils.client.get_images_by_metadata(
             dev_stage, mag, probes
