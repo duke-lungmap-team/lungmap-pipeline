@@ -965,7 +965,7 @@ class Application(tk.Frame):
 
         # candidate label = 0, structure labels = 1 -> len(structures)
         self.img_region_lut[self.current_img]['labels'] = list(
-            np.zeros(len(candidates))
+            np.zeros(len(candidates), dtype=np.uint32)
         )
 
         self.draw_regions()
@@ -1133,7 +1133,12 @@ class Application(tk.Frame):
         region_idx = int(tags[1])
         img_region_map = self.img_region_lut[self.current_img]
         labels = img_region_map['labels']
-        labels[region_idx] = current_label_code
+
+        # toggle this region label between current label and unlabelled
+        if labels[region_idx] == current_label_code:
+            labels[region_idx] = 0
+        else:
+            labels[region_idx] = current_label_code
 
         # finally, redraw regions
         self.clear_drawn_regions()
