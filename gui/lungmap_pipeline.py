@@ -20,14 +20,16 @@ except ImportError:
 
 BACKGROUND_COLOR = '#ededed'
 BORDER_COLOR = '#bebebe'
+TEXT_COLOR = '#5c616c'
 HIGHLIGHT_COLOR = '#5294e2'
 REGION_COLORS = {
-    'candidate': '#ff8000',
-    'current_label': '#00ff00',
-    'other_label': '#ff00ff'
+    'candidate': '#ffdd00',
+    'current_label': '#00dd80',
+    'other_label': '#ff00ff',
+    'deleted': '#ff0000'
 }
 
-WINDOW_WIDTH = 820
+WINDOW_WIDTH = 980
 WINDOW_HEIGHT = 920
 
 PAD_SMALL = 2
@@ -90,6 +92,8 @@ class Application(tk.Frame):
         self.current_img = None
         self.tk_image = None
 
+        self.delete_mode = False
+
         self.current_dev_stage = tk.StringVar(self.master)
         self.current_dev_stage.set(DEV_STAGES[0])
         self.current_mag = tk.StringVar(self.master)
@@ -103,6 +107,8 @@ class Application(tk.Frame):
         self.display_preprocessed = tk.BooleanVar(self.master)
         self.hide_other = tk.BooleanVar(self.master)
         self.hide_unlabelled = tk.BooleanVar(self.master)
+        self.show_deleted = tk.BooleanVar(self.master)
+        self.show_deleted.set(False)
         self.status_message = tk.StringVar(self.master)
         self.current_label = tk.StringVar(self.master)
         self.canvas_scale = tk.StringVar(self.master)
@@ -137,22 +143,13 @@ class Application(tk.Frame):
             pady=PAD_MEDIUM
         )
 
-        image_toolbar_frame = tk.Frame(main_frame, bg=BACKGROUND_COLOR)
-        image_toolbar_frame.pack(
-            fill=tk.X,
-            expand=False,
-            anchor=tk.N,
-            padx=PAD_LARGE,
-            pady=PAD_SMALL
-        )
-
-        bottom_frame = tk.Frame(main_frame, bg=BACKGROUND_COLOR)
-        bottom_frame.pack(
+        middle_frame = tk.Frame(main_frame, bg=BACKGROUND_COLOR)
+        middle_frame.pack(
             fill='both',
             expand=True,
             anchor='n',
-            padx=PAD_MEDIUM,
-            pady=PAD_SMALL
+            padx=PAD_LARGE,
+            pady=0
         )
 
         file_chooser_button_frame = tk.Frame(
@@ -220,6 +217,35 @@ class Application(tk.Frame):
             pady=PAD_SMALL
         )
 
+        middle_left_frame = tk.Frame(middle_frame, bg=BACKGROUND_COLOR)
+        middle_left_frame.pack(
+            fill=tk.BOTH,
+            expand=True,
+            anchor=tk.N,
+            side='left',
+            padx=(0, PAD_SMALL),
+            pady=0
+        )
+
+        middle_right_frame = tk.Frame(middle_frame, bg=BACKGROUND_COLOR)
+        middle_right_frame.pack(
+            fill=tk.Y,
+            expand=False,
+            anchor=tk.N,
+            side='right',
+            padx=(PAD_SMALL, 0),
+            pady=(32, PAD_MEDIUM)
+        )
+
+        image_toolbar_frame = tk.Frame(middle_left_frame, bg=BACKGROUND_COLOR)
+        image_toolbar_frame.pack(
+            fill=tk.X,
+            expand=False,
+            anchor=tk.N,
+            padx=0,
+            pady=PAD_SMALL
+        )
+
         self.find_regions_button = ttk.Button(
             image_toolbar_frame,
             text='Find Regions',
@@ -227,101 +253,25 @@ class Application(tk.Frame):
         )
         self.find_regions_button.pack(side=tk.LEFT, anchor=tk.N)
 
-        display_preprocessed_cb = ttk.Checkbutton(
-            image_toolbar_frame,
-            text="Display pre-processed image",
-            variable=self.display_preprocessed,
-            style='Default.TCheckbutton',
-            command=self.select_image
-        )
-        display_preprocessed_cb.pack(
-            side=tk.LEFT,
-            padx=PAD_MEDIUM
-        )
-
-        ttk.Separator(
-            image_toolbar_frame,
-            orient=tk.VERTICAL
-        ).pack(
-            side=tk.LEFT,
-            fill='y',
-            padx=PAD_MEDIUM
-        )
-
-        ttk.Label(
-            image_toolbar_frame,
-            text="Scale image:",
-            background=BACKGROUND_COLOR
-        ).pack(
-            side=tk.LEFT,
-            fill='none',
-            expand=False,
-            padx=PAD_MEDIUM
-        )
-        scale_option = ttk.Combobox(
-            image_toolbar_frame,
-            values=SCALE_VALUES,
-            textvariable=self.canvas_scale,
-            state='readonly',
-            width=4
-        )
-        scale_option.bind('<<ComboboxSelected>>', self.select_image)
-        scale_option.pack(
-            side=tk.LEFT,
-            fill='none',
-            expand=False,
-            padx=PAD_MEDIUM
-        )
-
-        ttk.Separator(
-            image_toolbar_frame,
-            orient=tk.VERTICAL
-        ).pack(
-            side=tk.LEFT,
-            fill='y',
-            padx=PAD_MEDIUM
-        )
-
-        hide_other_cb = ttk.Checkbutton(
-            image_toolbar_frame,
-            text="Hide other labels",
-            variable=self.hide_other,
-            style='Default.TCheckbutton',
-            command=self.select_image
-        )
-        hide_other_cb.pack(
-            side=tk.LEFT,
-            padx=PAD_MEDIUM
-        )
-
-        ttk.Separator(
-            image_toolbar_frame,
-            orient=tk.VERTICAL
-        ).pack(
-            side=tk.LEFT,
-            fill='y',
-            padx=PAD_MEDIUM
-        )
-
-        hide_unlabelled_cb = ttk.Checkbutton(
-            image_toolbar_frame,
-            text="Hide unlabelled",
-            variable=self.hide_unlabelled,
-            style='Default.TCheckbutton',
-            command=self.select_image
-        )
-        hide_unlabelled_cb.pack(
-            side=tk.LEFT,
-            padx=PAD_MEDIUM
-        )
-
         self.label_option = ttk.Combobox(
             image_toolbar_frame,
             textvariable=self.current_label,
             state='readonly'
         )
         self.label_option.bind('<<ComboboxSelected>>', self.select_label)
-        self.label_option.pack(side=tk.RIGHT, fill='x', expand=False)
+        self.label_option.pack(
+            side=tk.RIGHT,
+            fill=tk.X,
+            expand=False,
+            padx=0
+        )
+
+        self.delete_region_button = ttk.Button(
+            image_toolbar_frame,
+            text='Delete Region',
+            command=self.delete_region
+        )
+        self.delete_region_button.pack(side=tk.LEFT, anchor=tk.N)
 
         ttk.Label(
             image_toolbar_frame,
@@ -334,28 +284,19 @@ class Application(tk.Frame):
             padx=PAD_MEDIUM
         )
 
-        ttk.Separator(
-            image_toolbar_frame,
-            orient=tk.VERTICAL
-        ).pack(
-            side=tk.RIGHT,
-            fill='y',
-            padx=PAD_MEDIUM
-        )
-
         # the canvas frame's contents will use grid b/c of the double
         # scrollbar (they don't look right using pack), but the canvas itself
         # will be packed in its frame
-        canvas_frame = tk.Frame(bottom_frame, bg=BACKGROUND_COLOR)
+        canvas_frame = tk.Frame(middle_left_frame, bg=BACKGROUND_COLOR)
         canvas_frame.grid_rowconfigure(0, weight=1)
         canvas_frame.grid_columnconfigure(0, weight=1)
         canvas_frame.pack(
             fill=tk.BOTH,
             expand=True,
             anchor=tk.N,
-            side='right',
-            padx=PAD_MEDIUM,
-            pady=PAD_MEDIUM
+            side='left',
+            padx=0,
+            pady=0
         )
 
         self.canvas = tk.Canvas(
@@ -396,6 +337,110 @@ class Application(tk.Frame):
 
         self.pan_start_x = None
         self.pan_start_y = None
+
+        display_opt_frame = tk.LabelFrame(
+            middle_right_frame,
+            text="Display Options",
+            background=BACKGROUND_COLOR,
+            foreground=TEXT_COLOR
+        )
+        display_opt_frame.pack(
+            fill=tk.X,
+            expand=False,
+            anchor=tk.N
+        )
+
+        image_scale_frame = tk.Frame(display_opt_frame, bg=BACKGROUND_COLOR)
+        image_scale_frame.pack(
+            fill=tk.X,
+            expand=False,
+            anchor=tk.W,
+            side=tk.TOP,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+        ttk.Label(
+            image_scale_frame,
+            text="Scale image:",
+            background=BACKGROUND_COLOR
+        ).pack(
+            side=tk.LEFT,
+            fill='none',
+            expand=False,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+        scale_option = ttk.Combobox(
+            image_scale_frame,
+            values=SCALE_VALUES,
+            textvariable=self.canvas_scale,
+            state='readonly',
+            width=5
+        )
+        scale_option.bind('<<ComboboxSelected>>', self.select_image)
+        scale_option.pack(
+            side=tk.RIGHT,
+            fill='none',
+            expand=False,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        display_preprocessed_cb = ttk.Checkbutton(
+            display_opt_frame,
+            text="Display pre-processed image",
+            variable=self.display_preprocessed,
+            style='Default.TCheckbutton',
+            command=self.select_image
+        )
+        display_preprocessed_cb.pack(
+            anchor=tk.W,
+            side=tk.TOP,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        hide_other_cb = ttk.Checkbutton(
+            display_opt_frame,
+            text="Hide other labels",
+            variable=self.hide_other,
+            style='Default.TCheckbutton',
+            command=self.select_image
+        )
+        hide_other_cb.pack(
+            anchor=tk.W,
+            side=tk.TOP,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        hide_unlabelled_cb = ttk.Checkbutton(
+            display_opt_frame,
+            text="Hide unlabelled",
+            variable=self.hide_unlabelled,
+            style='Default.TCheckbutton',
+            command=self.select_image
+        )
+        hide_unlabelled_cb.pack(
+            anchor=tk.W,
+            side=tk.TOP,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        show_deleted_cb = ttk.Checkbutton(
+            display_opt_frame,
+            text="Show deleted",
+            variable=self.show_deleted,
+            style='Default.TCheckbutton',
+            command=self.select_image
+        )
+        show_deleted_cb.pack(
+            anchor=tk.W,
+            side=tk.TOP,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
 
         status_progress_frame = tk.Frame(main_frame, bg=BACKGROUND_COLOR)
         status_progress_frame.pack(
@@ -898,6 +943,7 @@ class Application(tk.Frame):
 
         hide_other = self.hide_other.get()
         hide_unlabelled = self.hide_unlabelled.get()
+        show_deleted = self.show_deleted.get()
 
         current_count = 0
         other_count = 0
@@ -906,12 +952,17 @@ class Application(tk.Frame):
         for i, c in enumerate(candidates):
             # label codes:
             #     candidate == 0 (means an unlabelled region)
+            #     deleted == -1
             #     >0 means sorted labels index + 1
             if labels[i] == 0:
                 region_type = 'candidate'
                 stipple = None
                 fill = ''
                 unlabelled_count += 1
+            elif labels[i] == -1:
+                region_type = 'deleted'
+                stipple = None
+                fill = ''
             elif labels[i] == current_label_code:
                 region_type = 'current_label'
                 stipple = 'gray12'
@@ -926,6 +977,8 @@ class Application(tk.Frame):
             if hide_other and region_type == 'other_label':
                 continue
             if hide_unlabelled and region_type == 'candidate':
+                continue
+            if not show_deleted and region_type == 'deleted':
                 continue
 
             self.canvas.create_polygon(
@@ -1070,6 +1123,22 @@ class Application(tk.Frame):
             daemon=True
         ).start()
 
+    def delete_region(self):
+        # first, check that an image is selected
+        # if self.current_img is None:
+        #     return
+
+        self.delete_mode = not self.delete_mode
+
+        if self.delete_mode:
+            self.delete_region_button.state(
+                ['pressed']
+            )
+        else:
+            self.delete_region_button.state(
+                ['!pressed']
+            )
+
     # noinspection PyUnusedLocal
     def select_label(self, event):
         self.clear_drawn_regions()
@@ -1114,14 +1183,18 @@ class Application(tk.Frame):
 
     # noinspection PyUnusedLocal
     def select_region(self, event):
-        # first, check if a label has been selected. If not, do nothing.
-        # If it has, determing the label code
+        # first, check if a label has been selected or if we are in delete
+        # mode. If a label is selected, determine the label code. If in
+        # delete mode, use label code -1. If neither, do nothing.
+        #
         current_label = self.current_label.get()
-        if current_label == '':
+        if self.delete_mode:
+            current_label_code = -1
+        elif current_label != '':
+            current_label_code = self.label_option['values'].index(current_label)
+            current_label_code += 1
+        else:
             return
-
-        current_label_code = self.label_option['values'].index(current_label)
-        current_label_code += 1
 
         # Next, check that the object is a polygon by the 'poly' tag we added
         current_cv_obj = self.canvas.find_withtag(tk.CURRENT)
