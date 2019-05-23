@@ -51,10 +51,13 @@ MAG_VALUES = [
 ]
 
 SCALE_VALUES = [
-    "0.25",
-    "0.50",
-    "0.75",
-    "1.00"
+    "0.250",
+    "0.375",
+    "0.500",
+    "0.625",
+    "0.750",
+    "0.875",
+    "1.000"
 ]
 
 PROBES = lungmap_utils.client.get_probes()
@@ -105,6 +108,7 @@ class Application(tk.Frame):
         self.current_probe3 = tk.StringVar(self.master)
         self.current_probe3.set('Anti-Sftpc')
         self.display_preprocessed = tk.BooleanVar(self.master)
+        self.hide_current_label = tk.BooleanVar(self.master)
         self.hide_other = tk.BooleanVar(self.master)
         self.hide_unlabelled = tk.BooleanVar(self.master)
         self.show_deleted = tk.BooleanVar(self.master)
@@ -112,7 +116,7 @@ class Application(tk.Frame):
         self.status_message = tk.StringVar(self.master)
         self.current_label = tk.StringVar(self.master)
         self.canvas_scale = tk.StringVar(self.master)
-        self.canvas_scale.set('0.50')
+        self.canvas_scale.set('0.500')
         self.status_progress = tk.IntVar(self.master)
         self.query_status_var = tk.StringVar(self.master)
 
@@ -395,6 +399,20 @@ class Application(tk.Frame):
             command=self.select_image
         )
         display_preprocessed_cb.pack(
+            anchor=tk.W,
+            side=tk.TOP,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        hide_current_cb = ttk.Checkbutton(
+            display_opt_frame,
+            text="Hide current label",
+            variable=self.hide_current_label,
+            style='Default.TCheckbutton',
+            command=self.select_image
+        )
+        hide_current_cb.pack(
             anchor=tk.W,
             side=tk.TOP,
             padx=PAD_MEDIUM,
@@ -966,6 +984,7 @@ class Application(tk.Frame):
             current_label_code = self.label_option['values'].index(current_label)
             current_label_code += 1
 
+        hide_current = self.hide_current_label.get()
         hide_other = self.hide_other.get()
         hide_unlabelled = self.hide_unlabelled.get()
         show_deleted = self.show_deleted.get()
@@ -999,6 +1018,8 @@ class Application(tk.Frame):
                 fill = REGION_COLORS[region_type]
                 other_count += 1
 
+            if hide_current and region_type == 'current_label':
+                continue
             if hide_other and region_type == 'other_label':
                 continue
             if hide_unlabelled and region_type == 'candidate':
