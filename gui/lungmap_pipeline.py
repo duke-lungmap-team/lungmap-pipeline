@@ -1245,7 +1245,11 @@ class Application(tk.Frame):
 
     # noinspection PyUnusedLocal
     def select_region(self, event):
-        # first, check if a label has been selected or if we are in delete
+        # First, make sure there is a current image
+        if self.current_img is None:
+            return
+
+        # Check if a label has been selected or if we are in delete
         # mode. If a label is selected, determine the label code. If in
         # delete mode, use label code -1. If neither, do nothing.
         #
