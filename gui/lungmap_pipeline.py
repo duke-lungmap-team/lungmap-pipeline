@@ -875,6 +875,8 @@ class Application(tk.Frame):
         # need at least 2 images to do pre-processing since one must be chosen
         # as the reference
         if len(self.images) < 2:
+            self.preprocess_images_button.config(state=tk.NORMAL)
+            self.status_message.set("Pre-processing requires at least 2 images")
             return
 
         sorted_img_names = sorted(self.images.keys())
