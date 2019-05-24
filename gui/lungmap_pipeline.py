@@ -872,6 +872,11 @@ class Application(tk.Frame):
             self.download_progress_bar.update()
 
     def _preprocess_images(self):
+        # need at least 2 images to do pre-processing since one must be chosen
+        # as the reference
+        if len(self.images) < 2:
+            return
+
         sorted_img_names = sorted(self.images.keys())
 
         # for progress status updates
