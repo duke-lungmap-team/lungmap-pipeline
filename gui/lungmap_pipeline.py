@@ -436,7 +436,7 @@ class Application(tk.Frame):
 
         hide_unlabelled_cb = ttk.Checkbutton(
             display_opt_frame,
-            text="Hide unlabelled",
+            text="Hide unlabelled regions",
             variable=self.hide_unlabelled,
             style='Default.TCheckbutton',
             command=self.select_image
@@ -450,7 +450,7 @@ class Application(tk.Frame):
 
         show_deleted_cb = ttk.Checkbutton(
             display_opt_frame,
-            text="Show deleted",
+            text="Show deleted regions",
             variable=self.show_deleted,
             style='Default.TCheckbutton',
             command=self.select_image
