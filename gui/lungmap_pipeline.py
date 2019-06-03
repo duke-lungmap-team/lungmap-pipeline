@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import font as tkfont
 import ttkthemes as themed_tk
 from tkinter import filedialog, ttk
 import threading
@@ -30,7 +31,7 @@ REGION_COLORS = {
 }
 
 WINDOW_WIDTH = 980
-WINDOW_HEIGHT = 920
+WINDOW_HEIGHT = 924
 
 PAD_SMALL = 2
 PAD_MEDIUM = 4
@@ -82,10 +83,31 @@ class Application(tk.Frame):
         self.master.config(bg=BACKGROUND_COLOR)
         self.master.title("LungMAP Region Generator")
 
+        # get default font style
+        default_font = tkfont.Font(None, 'TkDefaultFont').config()
+        normal_font = (
+            default_font['family'],
+            default_font['size'],
+            'normal'
+        )
+        bold_font = (
+            default_font['family'],
+            default_font['size'],
+            'bold'
+        )
+
         my_styles = ttk.Style()
         my_styles.configure(
             'Default.TCheckbutton',
             background=BACKGROUND_COLOR
+        )
+        my_styles.configure(
+            'Normal.TButton',
+            font=normal_font
+        )
+        my_styles.configure(
+            'Bold.TButton',
+            font=bold_font
         )
 
         self.images = {}
@@ -1196,10 +1218,12 @@ class Application(tk.Frame):
             self.delete_region_button.state(
                 ['pressed']
             )
+            self.delete_region_button.config(style='Bold.TButton')
         else:
             self.delete_region_button.state(
                 ['!pressed']
             )
+            self.delete_region_button.config(style='Normal.TButton')
 
     # noinspection PyUnusedLocal
     def select_label(self, event):
