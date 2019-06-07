@@ -2,8 +2,6 @@ import os
 import numpy as np
 from micap import utils, pipeline
 import pickle
-import matplotlib.pyplot as plt
-import cv2
 
 cell_radius = 16
 cell_size = np.pi * (cell_radius ** 2)
