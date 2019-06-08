@@ -254,7 +254,7 @@ def generate_iou_pred_matrices(true_regions, test_regions):
             union_mask = np.bitwise_or(true_mask, test_mask)
             iou = intersect_area / union_mask.sum()
             iou_mat[j, i] = iou
-            types, value = max(test_regions[j]['label']['prob'].items(), key=itemgetter(1))
+            types, value = max(test_regions[j]['prob'].items(), key=itemgetter(1))
             if types == true_regions['regions'][i]['label']:
                 pred_mat[j, i] = value
     return iou_mat, pred_mat
@@ -487,4 +487,3 @@ def plot_test_results(trained_pipeline, report):
         plt.imshow(new_img)
         plt.title("%s - %s" % (class_label, 'False Positive'))
         plt.show()
-

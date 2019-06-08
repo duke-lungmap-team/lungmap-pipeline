@@ -1,12 +1,10 @@
-import os
-import numpy as np
-from micap import utils, pipeline
 import pickle
-import cv2
 from eval.evaluation import *
 from sklearn.preprocessing import OneHotEncoder
-from scipy import interp
 from itertools import cycle
+from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import average_precision_score
 
 ohe = OneHotEncoder(sparse=False)
 
@@ -21,7 +19,7 @@ with open(os.path.join(output_path, 'evaluation.pkl'), 'rb') as f:
     eval_data = pickle.load(f)
 
 labels = list(set(x['label'] for x in eval_data['truth']['regions']))
-ohe.fit(np.array(labels).reshape(-1,1))
+ohe.fit(np.array(labels).reshape(-1, 1))
 
 
 iou_mat, pred_mat = generate_iou_pred_matrices(
@@ -34,8 +32,8 @@ iou_mat, pred_mat = generate_iou_pred_matrices(
 y_truth = []
 y_pred = []
 for pred_ind in range(len(eval_data['predictions'])):
-    if np.sum(iou_mat[pred_ind,:])>0:
-        truth_ind = np.argmax(iou_mat[pred_ind,:])
+    if np.sum(iou_mat[pred_ind, :]) > 0:
+        truth_ind = np.argmax(iou_mat[pred_ind, :])
         y_pred.append(
             np.array(pd.DataFrame([eval_data['predictions'][pred_ind]['prob']])[ohe.categories_[0].tolist()])[0]
         )
@@ -49,10 +47,6 @@ for pred_ind in range(len(eval_data['predictions'])):
 y_truth_array = np.stack(y_truth)
 y_pred_array = np.stack(y_pred)
 
-
-from sklearn.metrics import roc_curve, auc
-
-
 fpr = dict()
 tpr = dict()
 roc_auc = dict()
@@ -60,7 +54,7 @@ for i in range(6):
     fpr[i], tpr[i], _ = roc_curve(y_truth_array[:, i], y_pred_array[:, i])
     roc_auc[i] = auc(fpr[i], tpr[i])
 
-lw=2
+lw = 2
 
 for i, x in enumerate(ohe.categories_[0]):
     fpr[x] = fpr.pop(i)
@@ -83,9 +77,6 @@ plt.ylabel('True Positive Rate')
 plt.title('Process Residual (False), Predict Model (None) ROC')
 plt.legend(loc="lower right")
 plt.show()
-
-from sklearn.metrics import precision_recall_curve
-from sklearn.metrics import average_precision_score
 
 # For each class
 precision = dict()
