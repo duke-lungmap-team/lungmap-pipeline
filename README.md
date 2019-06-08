@@ -25,3 +25,5 @@ ln -s ~/lungmap-image-data data
 ```
 
 ### Running `example/*.py`
+Check the top of each script before running. Some scripts assume that other scripts have been run first. This is 
+done to stash model objects or other metadata needed to produce further output.

@@ -1,3 +1,7 @@
+######################################################################################################
+# We assume that examples/run_pipeline_b4_evaluation.py has been run first before running this script
+######################################################################################################
+
 import pickle
 from eval.evaluation import *
 from sklearn.preprocessing import OneHotEncoder
