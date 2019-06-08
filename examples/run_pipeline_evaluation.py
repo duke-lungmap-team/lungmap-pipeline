@@ -1,9 +1,11 @@
-##################################################
-# Assumes: examples/run_pipeline.py is run first
-##################################################
+import os
+import numpy as np
+from micap import utils, pipeline
 import pickle
+import cv2
 from eval.evaluation import *
 from sklearn.preprocessing import OneHotEncoder
+from scipy import interp
 from itertools import cycle
 
 ohe = OneHotEncoder(sparse=False)
@@ -15,7 +17,7 @@ output_path = os.path.join(
     '_'.join([image_set_dir, 'pipeline'])
 )
 
-with open(os.path.join(output_path, 'xgb_model.pkl'), 'rb') as f:
+with open(os.path.join(output_path, 'evaluation.pkl'), 'rb') as f:
     eval_data = pickle.load(f)
 
 labels = list(set(x['label'] for x in eval_data['truth']['regions']))
@@ -35,12 +37,12 @@ for pred_ind in range(len(eval_data['predictions'])):
     if np.sum(iou_mat[pred_ind,:])>0:
         truth_ind = np.argmax(iou_mat[pred_ind,:])
         y_pred.append(
-            np.array(pd.DataFrame([eval_data['predictions'][pred_ind]['label']['prob']])[ohe.categories_[0].tolist()])[0]
+            np.array(pd.DataFrame([eval_data['predictions'][pred_ind]['prob']])[ohe.categories_[0].tolist()])[0]
         )
         y_truth.append(ohe.transform(np.array(eval_data['truth']['regions'][truth_ind]['label']).reshape(-1, 1))[0])
     else:
         y_pred.append(
-            np.array(pd.DataFrame([eval_data['predictions'][pred_ind]['label']['prob']])[ohe.categories_[0].tolist()])[0]
+            np.array(pd.DataFrame([eval_data['predictions'][pred_ind]['prob']])[ohe.categories_[0].tolist()])[0]
         )
         y_truth.append(ohe.transform(np.array('background').reshape(-1, 1))[0])
 
@@ -103,13 +105,13 @@ for i, x in enumerate(ohe.categories_[0]):
 f_scores = np.linspace(0.2, 0.8, num=4)
 lines = []
 labels = []
-plt.figure(figsize=(7, 8))
 for f_score in f_scores:
     x = np.linspace(0.01, 1)
     y = f_score * x / (2 * x - f_score)
     l, = plt.plot(x[y >= 0], y[y >= 0], color='gray', alpha=0.2)
     plt.annotate('f1={0:0.1f}'.format(f_score), xy=(0.9, y[45] + 0.02))
 
+plt.figure(figsize=(7, 8))
 for i, color in zip(list(fpr.keys()), colors):
     l, = plt.plot(recall[i], precision[i], color=color, lw=2)
     lines.append(l)

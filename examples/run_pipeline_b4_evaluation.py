@@ -2,8 +2,6 @@ import os
 import numpy as np
 from micap import utils, pipeline
 import pickle
-import matplotlib.pyplot as plt
-import cv2
 
 cell_radius = 16
 cell_size = np.pi * (cell_radius ** 2)
@@ -12,33 +10,28 @@ seg_config = [
     {
         'type': 'color',
         'args': {
-            'blur_kernel': (15, 15),
+            'blur_kernel': (17, 17),
             'min_size': 3 * cell_size,
             'max_size': None,
-            'colors': ['green', 'cyan', 'red', 'violet']
+            'colors': ['green', 'cyan', 'red', 'violet', 'yellow']
         }
     },
     {
         'type': 'saturation',
-        'args': {'blur_kernel': (63, 63), 'min_size': 3 * cell_size, 'max_size': None}
+        'args': {'blur_kernel': (71, 71), 'min_size': 12 * cell_size, 'max_size': None}
     },
     {
         'type': 'saturation',
-        'args': {'blur_kernel': (31, 31), 'min_size': 3 * cell_size, 'max_size': None}
+        'args': {'blur_kernel': (53, 53), 'min_size': 3 * cell_size, 'max_size': None}
     },
     {
         'type': 'saturation',
-        'args': {'blur_kernel': (15, 15), 'min_size': 3 * cell_size, 'max_size': None}
+        'args': {'blur_kernel': (35, 35), 'min_size': 3 * cell_size, 'max_size': 45 * cell_size}
     },
     {
-        'type': 'color',
-        'args': {
-            'blur_kernel': (7, 7),
-            'min_size': 3 * cell_size,
-            'max_size': None,
-            'colors': ['white', 'gray']
-        }
-    },
+        'type': 'saturation',
+        'args': {'blur_kernel': (17, 17), 'min_size': 3 * cell_size, 'max_size': 45 * cell_size}
+    }
 ]
 
 image_set_dir = 'mm_e16.5_20x_sox9_sftpc_acta2/light_color_corrected'
@@ -62,6 +55,11 @@ try:
     xgb_model = pck['model']
     categories = pck['categories']
     test_img_hsv = pck['test_img_hsv']
+    # get training data
+    training_data = utils.get_training_data_for_image_set(image_set_path)
+    # remove an image from training data to use for predict testing
+    test_img_name = '2015-04-029_20X_C57Bl6_E16.5_LMM.14.24.4.46_SOX9_SFTPC_ACTA2_001.tif'
+    test_data = training_data.pop(test_img_name)
 except FileNotFoundError:
     # get training data
     training_data = utils.get_training_data_for_image_set(image_set_path)
@@ -84,34 +82,18 @@ except FileNotFoundError:
     pickle.dump(pck, f)
     f.close()
 
-# test_img_hsv = test_img_hsv[750:1000, 1050:1300, :]
-#
-# plt.figure(figsize=(16, 16))
-# plt.imshow(cv2.cvtColor(test_img_hsv, cv2.COLOR_HSV2RGB))
-# plt.axis('off')
-# plt.show()
-
 # and pipeline test steps
 candidate_contours = pipeline.generate_structure_candidates(
     test_img_hsv,
     seg_config,
-    filter_min_size=3 * cell_size,
-    dog_factor=7,
-    process_residual=False,
-    predict_model=xgb_model,
-    categories=categories,
-    plot=False
+    filter_min_size=2 * cell_size,
+    plot=True
 )
 test_data_processed = pipeline.process_test_data(test_img_hsv, candidate_contours)
 pred_results = pipeline.predict(test_data_processed, xgb_model, categories)
 
 # plot functions
-pipeline.plot_test_results(
-    test_img_hsv,
-    candidate_contours,
-    pred_results,
-    output_path
-)
+pipeline.plot_test_results(test_img_hsv, candidate_contours, pred_results, output_path)
 
 # optional cell segmentation
 # utils.process_structures_into_cells(
@@ -119,6 +101,19 @@ pipeline.plot_test_results(
 #     os.path.join(output_path, 'regions'),
 #     candidate_contours,
 #     cell_color_list=['green', 'cyan'],
-#     max_cell_area=1.0*cell_size,
+#     max_cell_area=1.5*cell_size,
 #     plot=True
 # )
+
+final = []
+for i, d in enumerate(pred_results):
+    d['points'] = candidate_contours[i]
+    final.append(d)
+
+eval_data = {
+    'truth': test_data,
+    'predictions': final
+}
+
+with open(os.path.join(output_path, 'evaluation.pkl'), 'wb') as f:
+    pickle.dump(eval_data, f)
