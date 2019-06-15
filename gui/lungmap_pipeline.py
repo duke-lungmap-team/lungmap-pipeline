@@ -118,6 +118,11 @@ class Application(tk.Frame):
         self.tk_image = None
 
         self.delete_mode = False
+        self.new_region_mode = False
+
+        self.rect = None
+        self.start_x = None
+        self.start_y = None
 
         self.current_dev_stage = tk.StringVar(self.master)
         self.current_dev_stage.set(DEV_STAGES[0])
@@ -295,10 +300,17 @@ class Application(tk.Frame):
 
         self.delete_region_button = ttk.Button(
             image_toolbar_frame,
-            text='Delete Region',
-            command=self.delete_region
+            text='Delete Mode',
+            command=self.toggle_delete_mode
         )
         self.delete_region_button.pack(side=tk.LEFT, anchor=tk.N)
+
+        self.new_region_button = ttk.Button(
+            image_toolbar_frame,
+            text='New Region Mode',
+            command=self.toggle_new_region_mode
+        )
+        self.new_region_button.pack(side=tk.LEFT, anchor=tk.N)
 
         ttk.Label(
             image_toolbar_frame,
@@ -354,7 +366,9 @@ class Application(tk.Frame):
         self.scrollbar_v.grid(row=0, column=1, sticky=tk.N + tk.S)
         self.scrollbar_h.grid(row=1, column=0, sticky=tk.E + tk.W)
 
-        self.canvas.bind("<Button-1>", self.select_region)
+        self.canvas.bind("<Button-1>", self.on_left_click)
+        self.canvas.bind("<B1-Motion>", self.on_draw_move)
+        self.canvas.bind("<ButtonRelease-1>", self.on_draw_release)
         self.canvas.bind("<ButtonPress-2>", self.on_pan_button_press)
         self.canvas.bind("<B2-Motion>", self.pan_image)
         self.canvas.bind("<ButtonRelease-2>", self.on_pan_button_release)
@@ -1086,7 +1100,7 @@ class Application(tk.Frame):
             )
         )
 
-    def run_segmentation(self, hsv_img, seg_config, cell_size):
+    def run_segmentation(self, hsv_img, seg_config, cell_size, offset=None, dog_factor=7):
         if self.current_img not in self.img_region_lut:
             self.img_region_lut[self.current_img] = {}
         progress_callback = ProgressCallable(self.status_progress)
@@ -1094,31 +1108,47 @@ class Application(tk.Frame):
             hsv_img,
             seg_config,
             filter_min_size=3 * cell_size,
-            dog_factor=7,
+            dog_factor=dog_factor,
             process_residual=False,
             plot=False,
             progress_callback=progress_callback
         )
 
-        self.img_region_lut[self.current_img]['candidates'] = candidates
+        if self.new_region_mode:
+            if offset is not None:
+                offset_x = offset[0]
+                offset_y = offset[1]
+            else:
+                offset_x = 0
+                offset_y = 0
 
-        # candidate label = 0, structure labels = 1 -> len(structures)
-        self.img_region_lut[self.current_img]['labels'] = list(
-            np.zeros(len(candidates), dtype=np.uint32)
-        )
+            biggest_candidate = None
+            largest_area = 0
 
+            for c in candidates:
+                area = cv2.contourArea(c)
+                if area > largest_area:
+                    biggest_candidate = c + [offset_x, offset_y]
+
+            if biggest_candidate is not None:
+                self.img_region_lut[self.current_img]['candidates'].append(
+                    biggest_candidate
+                )
+                self.img_region_lut[self.current_img]['labels'].append(0)
+        else:
+            self.img_region_lut[self.current_img]['candidates'] = candidates
+
+            # candidate label = 0, structure labels = 1 -> len(structures)
+            self.img_region_lut[self.current_img]['labels'] = list(
+                np.zeros(len(candidates), dtype=np.uint32)
+            )
+
+        self.clear_drawn_regions()
         self.draw_regions()
         self.status_progress.set(0)
         self.find_regions_button.config(state=tk.NORMAL)
 
-    def find_regions(self):
-        # build micap pipeline, w/ seg stages based on 'has_part'
-        # and 'surrounded_by' probe/structure mappings
-
-        # first, check that an image is selected
-        if self.current_img is None:
-            return
-
+    def build_seg_config(self, cell_size, kernel_adjustments=(0,)):
         # build seg config for current image
         probes = self.images[self.current_img]['probes']
         probe_colors = [
@@ -1152,44 +1182,75 @@ class Application(tk.Frame):
         if 'white' in non_has_part_colors:
             non_has_part_colors.add('gray')
 
-        cell_radius = 16
-        cell_size = np.pi * (cell_radius ** 2)
+        seg_config = []
+        for k in kernel_adjustments:
+            seg_config.append(
+                # 1st seg stage uses 'has_part colors'
+                {
+                    'type': 'color',
+                    'args': {
+                        'blur_kernel': (15 + k, 15 + k),
+                        'min_size': 3 * cell_size,
+                        'max_size': None,
+                        'colors': has_part_colors
+                    }
+                }
+            )
+            seg_config.append(
+                # 2nd - 4th stages are saturation stages of descending sizes
+                {
+                    'type': 'saturation',
+                    'args': {
+                        'blur_kernel': (95 + k, 95 + k),
+                        'min_size': 3 * cell_size,
+                        'max_size': None
+                    }
+                }
+            )
+            seg_config.append(
+                {
+                    'type': 'saturation',
+                    'args': {
+                        'blur_kernel': (31 + k, 31 + k),
+                        'min_size': 3 * cell_size,
+                        'max_size': None
+                    }
+                }
+            )
+            seg_config.append(
+                {
+                    'type': 'saturation',
+                    'args': {
+                        'blur_kernel': (15 + k, 15 + k),
+                        'min_size': 3 * cell_size,
+                        'max_size': None
+                    }
+                }
+            )
+            seg_config.append(
+                # final stage is a color stage on the non has part colors
+                {
+                    'type': 'color',
+                    'args': {
+                        'blur_kernel': (7 + k, 7 + k),
+                        'min_size': 3 * cell_size,
+                        'max_size': None,
+                        'colors': non_has_part_colors
+                    }
+                }
+            )
 
-        seg_config = [
-            # 1st seg stage uses 'has_part colors'
-            {
-                'type': 'color',
-                'args': {
-                    'blur_kernel': (15, 15),
-                    'min_size': 3 * cell_size,
-                    'max_size': None,
-                    'colors': has_part_colors
-                }
-            },
-            # 2nd - 4th stages are saturation stages of descending sizes
-            {
-                'type': 'saturation',
-                'args': {'blur_kernel': (95, 95), 'min_size': 3 * cell_size, 'max_size': None}
-            },
-            {
-                'type': 'saturation',
-                'args': {'blur_kernel': (31, 31), 'min_size': 3 * cell_size, 'max_size': None}
-            },
-            {
-                'type': 'saturation',
-                'args': {'blur_kernel': (15, 15), 'min_size': 3 * cell_size, 'max_size': None}
-            },
-            # final stage is a color stage on the non has part colors
-            {
-                'type': 'color',
-                'args': {
-                    'blur_kernel': (7, 7),
-                    'min_size': 3 * cell_size,
-                    'max_size': None,
-                    'colors': non_has_part_colors
-                }
-            },
-        ]
+        return seg_config
+
+    def find_sub_region(self, cell_size):
+        if not self.new_region_mode:
+            return
+
+        if self.rect is None or self.current_img is None:
+            return
+
+        corners = self.canvas.coords(self.rect)
+        corners = tuple([int(c / float(self.canvas_scale.get())) for c in corners])
 
         if self.images[self.current_img]['corr_rgb_img'] is not None:
             hsv_img = cv2.cvtColor(
@@ -1199,18 +1260,61 @@ class Application(tk.Frame):
         else:
             hsv_img = self.images[self.current_img]['hsv_img']
 
+        region = hsv_img[corners[1]:corners[3], corners[0]:corners[2], :]
+        offset = (corners[0], corners[1])
+
+        seg_config = self.build_seg_config(cell_size, kernel_adjustments=(-2, 2))
+
+        self.status_message.set("Finding regions...")
+        self.find_regions_button.config(state=tk.DISABLED)
+        dog_factor = 4
+        threading.Thread(
+            target=self.run_segmentation,
+            args=(region, seg_config, cell_size, offset, dog_factor),
+            daemon=True
+        ).start()
+
+    def find_regions(self):
+        # build micap pipeline, w/ seg stages based on 'has_part'
+        # and 'surrounded_by' probe/structure mappings
+
+        # first, check that an image is selected
+        if self.current_img is None:
+            return
+
+        cell_radius = 16
+        cell_size = np.pi * (cell_radius ** 2)
+
+        # Next, see if new region mode is enabled
+        if self.new_region_mode:
+            self.find_sub_region(cell_size)
+            return
+
+        if self.images[self.current_img]['corr_rgb_img'] is not None:
+            hsv_img = cv2.cvtColor(
+                self.images[self.current_img]['corr_rgb_img'],
+                cv2.COLOR_RGB2HSV
+            )
+        else:
+            hsv_img = self.images[self.current_img]['hsv_img']
+
+        seg_config = self.build_seg_config(cell_size)
+
         self.status_message.set("Finding regions...")
         self.find_regions_button.config(state=tk.DISABLED)
         threading.Thread(
             target=self.run_segmentation,
-            args=(hsv_img, seg_config, cell_size),
+            args=(hsv_img, seg_config, cell_size, None),
             daemon=True
         ).start()
 
-    def delete_region(self):
+    def toggle_delete_mode(self):
         # first, check that an image is selected
         # if self.current_img is None:
         #     return
+
+        if self.new_region_mode:
+            self.toggle_new_region_mode()
 
         self.delete_mode = not self.delete_mode
 
@@ -1225,10 +1329,60 @@ class Application(tk.Frame):
             )
             self.delete_region_button.config(style='Normal.TButton')
 
+    def toggle_new_region_mode(self):
+        if self.delete_mode:
+            self.toggle_delete_mode()
+
+        self.new_region_mode = not self.new_region_mode
+
+        if self.new_region_mode:
+            self.new_region_button.state(
+                ['pressed']
+            )
+            self.new_region_button.config(style='Bold.TButton')
+        else:
+            self.new_region_button.state(
+                ['!pressed']
+            )
+            self.new_region_button.config(style='Normal.TButton')
+            self.canvas.delete("rect")
+            self.rect = None
+
     # noinspection PyUnusedLocal
     def select_label(self, event):
         self.clear_drawn_regions()
         self.draw_regions()
+
+    def on_draw_button_press(self, event):
+        # starting coordinates
+        self.start_x = self.canvas.canvasx(event.x)
+        self.start_y = self.canvas.canvasy(event.y)
+
+        # create a new rectangle if we don't already have one
+        if self.rect is None:
+            self.rect = self.canvas.create_rectangle(
+                self.start_x,
+                self.start_y,
+                self.start_x,
+                self.start_y,
+                outline='#00ff00',
+                width=2,
+                tags=('rect',)
+            )
+
+    def on_draw_move(self, event):
+        if not self.new_region_mode:
+            return
+
+        cur_x = self.canvas.canvasx(event.x)
+        cur_y = self.canvas.canvasy(event.y)
+
+        # update rectangle size with mouse position
+        self.canvas.coords(self.rect, self.start_x, self.start_y, cur_x, cur_y)
+
+    # noinspection PyUnusedLocal
+    def on_draw_release(self, event):
+        pass
 
     def on_pan_button_press(self, event):
         self.canvas.config(cursor='fleur')
@@ -1249,6 +1403,8 @@ class Application(tk.Frame):
         self.canvas.config(cursor='tcross')
 
     def clear_drawn_regions(self):
+        self.rect = None
+        self.canvas.delete("rect")
         self.canvas.delete("poly")
 
     def save_regions_json(self):
@@ -1266,6 +1422,13 @@ class Application(tk.Frame):
             indent=2,
             default=my_converter
         )
+
+    def on_left_click(self, event):
+        if not self.new_region_mode:
+            self.select_region(event)
+        else:
+            # we're in new region mode, start drawing a rectangle
+            self.on_draw_button_press(event)
 
     # noinspection PyUnusedLocal
     def select_region(self, event):
