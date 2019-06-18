@@ -9,7 +9,7 @@ import json
 import numpy as np
 import lungmap_utils
 from micap import utils as micap_utils, pipeline
-from gui import utils as gui_utils
+from helpers import utils as gui_utils
 
 ontology = gui_utils.onto
 
