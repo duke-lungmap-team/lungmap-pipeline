@@ -1473,7 +1473,8 @@ class Application(tk.Frame):
         self.draw_regions()
 
 
-root = themed_tk.ThemedTk()
-root.set_theme('arc')
-app = Application(root)
-root.mainloop()
+if __name__ == "__main__":
+    root = themed_tk.ThemedTk()
+    root.set_theme('arc')
+    app = Application(root)
+    root.mainloop()
