@@ -1,5 +1,4 @@
 import tkinter as tk
-from tkinter import font as tkfont
 import ttkthemes as themed_tk
 from tkinter import filedialog, ttk
 import threading
@@ -9,9 +8,10 @@ import json
 import numpy as np
 import lungmap_utils
 from micap import utils as micap_utils, pipeline
-from helpers import utils as gui_utils
 
-ontology = gui_utils.onto
+pm_map_file = open('resources/probe_structure_map.json', 'r')
+PROBE_STRUCTURE_MAP = json.load(pm_map_file)
+pm_map_file.close()
 
 # weird import style to un-confuse PyCharm
 try:
@@ -83,31 +83,10 @@ class Application(tk.Frame):
         self.master.config(bg=BACKGROUND_COLOR)
         self.master.title("LungMAP Region Generator")
 
-        # get default font style
-        default_font = tkfont.Font(None, 'TkDefaultFont').config()
-        normal_font = (
-            default_font['family'],
-            default_font['size'],
-            'normal'
-        )
-        bold_font = (
-            default_font['family'],
-            default_font['size'],
-            'bold'
-        )
-
         my_styles = ttk.Style()
         my_styles.configure(
             'Default.TCheckbutton',
             background=BACKGROUND_COLOR
-        )
-        my_styles.configure(
-            'Normal.TButton',
-            font=normal_font
-        )
-        my_styles.configure(
-            'Bold.TButton',
-            font=bold_font
         )
 
         self.images = {}
@@ -117,13 +96,16 @@ class Application(tk.Frame):
         self.current_img = None
         self.tk_image = None
 
-        self.delete_mode = False
-        self.new_region_mode = False
-
         self.rect = None
         self.start_x = None
         self.start_y = None
 
+        # Valid modes are:
+        #    - 'find_all': for running the full seg pipeline
+        #    - 'find': for segmenting a single region in a drawn rectangle
+        #    - 'delete': for deleting one region at a time
+        #    - 'split': for splitting a region into 2 new regions
+        self.mode = tk.StringVar(self.master)
         self.current_dev_stage = tk.StringVar(self.master)
         self.current_dev_stage.set(DEV_STAGES[0])
         self.current_mag = tk.StringVar(self.master)
@@ -278,15 +260,55 @@ class Application(tk.Frame):
             pady=PAD_SMALL
         )
 
+        ttk.Label(
+            image_toolbar_frame,
+            text="Select Mode:",
+            background=BACKGROUND_COLOR
+        ).pack(
+            side=tk.LEFT,
+            fill='none',
+            expand=False,
+            padx=PAD_MEDIUM
+        )
+
+        self.mode_option = ttk.Combobox(
+            image_toolbar_frame,
+            textvariable=self.mode,
+            state='readonly'
+        )
+        self.mode_option['values'] = [
+            'Find Regions',  # mode=0
+            'Draw Region',  # mode=1
+            'Split Region',  # mode=2
+            'Delete Regions',  # mode=3
+            'Label Regions'  # mode=4
+        ]
+        self.mode_option.bind('<<ComboboxSelected>>', self.select_mode)
+        self.mode_option.pack(
+            side=tk.LEFT,
+            fill=tk.X,
+            expand=False,
+            padx=0
+        )
+
         self.find_regions_button = ttk.Button(
             image_toolbar_frame,
             text='Find Regions',
             command=self.find_regions
         )
         self.find_regions_button.pack(side=tk.LEFT, anchor=tk.N)
+        self.find_regions_button.pack_forget()
 
+        self.label_frame = tk.Frame(image_toolbar_frame, bg=BACKGROUND_COLOR)
+        self.label_frame.pack(
+            fill=tk.X,
+            expand=False,
+            side=tk.RIGHT,
+            padx=0,
+            pady=0
+        )
         self.label_option = ttk.Combobox(
-            image_toolbar_frame,
+            self.label_frame,
             textvariable=self.current_label,
             state='readonly'
         )
@@ -298,22 +320,8 @@ class Application(tk.Frame):
             padx=0
         )
 
-        self.delete_region_button = ttk.Button(
-            image_toolbar_frame,
-            text='Delete Mode',
-            command=self.toggle_delete_mode
-        )
-        self.delete_region_button.pack(side=tk.LEFT, anchor=tk.N)
-
-        self.new_region_button = ttk.Button(
-            image_toolbar_frame,
-            text='New Region Mode',
-            command=self.toggle_new_region_mode
-        )
-        self.new_region_button.pack(side=tk.LEFT, anchor=tk.N)
-
         ttk.Label(
-            image_toolbar_frame,
+            self.label_frame,
             text="Assign label:",
             background=BACKGROUND_COLOR
         ).pack(
@@ -322,6 +330,7 @@ class Application(tk.Frame):
             expand=False,
             padx=PAD_MEDIUM
         )
+        self.label_frame.pack_forget()
 
         # the canvas frame's contents will use grid b/c of the double
         # scrollbar (they don't look right using pack), but the canvas itself
@@ -842,13 +851,6 @@ class Application(tk.Frame):
             dev_stage, mag, probes
         )
 
-        # will query ontology structures here b/c we can do it once for
-        # all these images instead of for each image
-        probe_structure_dict = gui_utils.get_probe_structure_map(
-            ontology,
-            probes
-        )
-
         # clear the list box & queried_images
         self.query_results_list_box.delete(0, tk.END)
         self.queried_images = {}
@@ -868,7 +870,7 @@ class Application(tk.Frame):
                 'mag': mag,
                 'probes': probes,
                 'probe_colors': probe_colors,
-                'probe_structure_map': probe_structure_dict
+                'probe_structure_map': PROBE_STRUCTURE_MAP
             }
 
             self.query_results_list_box.insert(tk.END, image_name)
@@ -1019,6 +1021,25 @@ class Application(tk.Frame):
         )
         self.draw_regions()
 
+    # noinspection PyUnusedLocal
+    def select_mode(self, event=None):
+        # 'Find Regions',   mode=0
+        # 'Draw Region',    mode=1
+        # 'Split Region',   mode=2
+        # 'Delete Regions', mode=3
+        # 'Label Regions'   mode=4
+        mode = self.mode_option.current()
+
+        if mode == 0:
+            self.label_frame.pack_forget()
+            self.find_regions_button.pack(side=tk.LEFT)
+        elif mode == 4:
+            self.find_regions_button.pack_forget()
+            self.label_frame.pack(side=tk.RIGHT)
+        else:
+            self.label_frame.pack_forget()
+            self.find_regions_button.pack_forget()
+
     def draw_regions(self):
         try:
             img_region_map = self.img_region_lut[self.current_img]
@@ -1114,7 +1135,8 @@ class Application(tk.Frame):
             progress_callback=progress_callback
         )
 
-        if self.new_region_mode:
+        if self.rect is not None and self.current_img is not None:
+            # there's a rectangle, so we only want one region returned
             if offset is not None:
                 offset_x = offset[0]
                 offset_y = offset[1]
@@ -1243,9 +1265,6 @@ class Application(tk.Frame):
         return seg_config
 
     def find_sub_region(self, cell_size):
-        if not self.new_region_mode:
-            return
-
         if self.rect is None or self.current_img is None:
             return
 
@@ -1266,7 +1285,6 @@ class Application(tk.Frame):
         seg_config = self.build_seg_config(cell_size, kernel_adjustments=(-2, 2))
 
         self.status_message.set("Finding regions...")
-        self.find_regions_button.config(state=tk.DISABLED)
         dog_factor = 4
         threading.Thread(
             target=self.run_segmentation,
@@ -1285,8 +1303,9 @@ class Application(tk.Frame):
         cell_radius = 16
         cell_size = np.pi * (cell_radius ** 2)
 
-        # Next, see if new region mode is enabled
-        if self.new_region_mode:
+        # Next, see if we're evaluating a sub-region
+        if self.rect is not None:
+            # there's a rectangle, so find sub-region
             self.find_sub_region(cell_size)
             return
 
@@ -1301,52 +1320,11 @@ class Application(tk.Frame):
         seg_config = self.build_seg_config(cell_size)
 
         self.status_message.set("Finding regions...")
-        self.find_regions_button.config(state=tk.DISABLED)
         threading.Thread(
             target=self.run_segmentation,
             args=(hsv_img, seg_config, cell_size, None),
             daemon=True
         ).start()
-
-    def toggle_delete_mode(self):
-        # first, check that an image is selected
-        # if self.current_img is None:
-        #     return
-
-        if self.new_region_mode:
-            self.toggle_new_region_mode()
-
-        self.delete_mode = not self.delete_mode
-
-        if self.delete_mode:
-            self.delete_region_button.state(
-                ['pressed']
-            )
-            self.delete_region_button.config(style='Bold.TButton')
-        else:
-            self.delete_region_button.state(
-                ['!pressed']
-            )
-            self.delete_region_button.config(style='Normal.TButton')
-
-    def toggle_new_region_mode(self):
-        if self.delete_mode:
-            self.toggle_delete_mode()
-
-        self.new_region_mode = not self.new_region_mode
-
-        if self.new_region_mode:
-            self.new_region_button.state(
-                ['pressed']
-            )
-            self.new_region_button.config(style='Bold.TButton')
-        else:
-            self.new_region_button.state(
-                ['!pressed']
-            )
-            self.new_region_button.config(style='Normal.TButton')
-            self.canvas.delete("rect")
-            self.rect = None
 
     # noinspection PyUnusedLocal
     def select_label(self, event):
@@ -1371,7 +1349,14 @@ class Application(tk.Frame):
             )
 
     def on_draw_move(self, event):
-        if not self.new_region_mode:
+        # 'Find Regions',   mode=0
+        # 'Draw Region',    mode=1
+        # 'Split Region',   mode=2
+        # 'Delete Regions', mode=3
+        # 'Label Regions'   mode=4
+        mode = self.mode_option.current()
+
+        if mode != 0:
             return
 
         cur_x = self.canvas.canvasx(event.x)
@@ -1424,11 +1409,26 @@ class Application(tk.Frame):
         )
 
     def on_left_click(self, event):
-        if not self.new_region_mode:
-            self.select_region(event)
-        else:
-            # we're in new region mode, start drawing a rectangle
+        # 'Find Regions',   mode=0
+        # 'Draw Region',    mode=1
+        # 'Split Region',   mode=2
+        # 'Delete Regions', mode=3
+        # 'Label Regions'   mode=4
+        mode = self.mode_option.current()
+
+        if mode == 0:
+            # we're in find region mode, and the user clicked on the canvas.
+            # This means they want to find a single region in a specific place
+            # start drawing a rectangle
             self.on_draw_button_press(event)
+        elif mode == 1:
+            # we're in draw region mode and need to start drawing a polygon
+            # TODO: make a draw polygon method
+            pass
+        else:
+            # For all other modes we try to select a region, that method will
+            # will handle differences in these modes
+            self.select_region(event)
 
     # noinspection PyUnusedLocal
     def select_region(self, event):
@@ -1441,7 +1441,15 @@ class Application(tk.Frame):
         # delete mode, use label code -1. If neither, do nothing.
         #
         current_label = self.current_label.get()
-        if self.delete_mode:
+
+        # 'Find Regions',   mode=0
+        # 'Draw Region',    mode=1
+        # 'Split Region',   mode=2
+        # 'Delete Regions', mode=3
+        # 'Label Regions'   mode=4
+        mode = self.mode_option.current()
+
+        if mode == 3:
             current_label_code = -1
         elif current_label != '':
             current_label_code = self.label_option['values'].index(current_label)
