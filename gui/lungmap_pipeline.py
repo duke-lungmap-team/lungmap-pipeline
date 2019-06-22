@@ -1545,6 +1545,9 @@ class Application(tk.Frame):
         # toggle this region label between current label and unlabelled
         if labels[region_idx] == current_label_code:
             labels[region_idx] = 0
+        elif labels[region_idx] == -1:
+            # toggle a deleted region back to unlabelled
+            labels[region_idx] = 0
         else:
             labels[region_idx] = current_label_code
 
