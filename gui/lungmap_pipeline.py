@@ -6,6 +6,8 @@ import PIL.Image
 import PIL.ImageTk
 import json
 import numpy as np
+from sklearn.cluster import spectral_clustering
+from sklearn.feature_extraction import image as sk_image
 import lungmap_utils
 from micap import utils as micap_utils, pipeline
 
@@ -1326,6 +1328,66 @@ class Application(tk.Frame):
             daemon=True
         ).start()
 
+    def split_region(self, region_idx):
+        img_region_map = self.img_region_lut[self.current_img]
+        contour = img_region_map['candidates'][region_idx]
+
+        min_x, min_y, w, h = cv2.boundingRect(contour)
+        max_x, max_y = min_x + w, min_y + h
+        mc_x = contour - [min_x, min_y]
+
+        split_mask_x = np.zeros((h, w), dtype=np.uint8)
+        cv2.drawContours(split_mask_x, [mc_x], -1, 1, -1)
+
+        if self.images[self.current_img]['corr_rgb_img'] is not None:
+            hsv_img = cv2.cvtColor(
+                self.images[self.current_img]['corr_rgb_img'],
+                cv2.COLOR_RGB2HSV
+            )
+        else:
+            hsv_img = self.images[self.current_img]['hsv_img']
+
+        # use just the value channel
+        signal_img = hsv_img[min_y:max_y, min_x:max_x, 2]
+
+        # Convert the image into a graph with the value of the gradient on the
+        # edges.
+        region_graph = sk_image.img_to_graph(
+            signal_img,
+            mask=split_mask_x.astype(np.bool)
+        )
+
+        # Take a decreasing function of the gradient: we take it weakly
+        # dependent from the gradient the segmentation is close to a voronoi
+        region_graph.data = np.exp(-region_graph.data / region_graph.data.std())
+
+        n_clusters = 2
+
+        labels = spectral_clustering(
+            region_graph,
+            n_clusters=n_clusters,
+            eigen_solver='amg',
+            n_init=10
+        )
+
+        label_im = np.full(split_mask_x.shape, -1.)
+        label_im[split_mask_x.astype(np.bool)] = labels
+
+        split_contours = []
+
+        for label in range(n_clusters):
+            new_mask = label_im == label
+
+            contours, _ = cv2.findContours(
+                new_mask.astype(np.uint8),
+                cv2.RETR_EXTERNAL,
+                cv2.CHAIN_APPROX_SIMPLE
+            )
+
+            split_contours.append(contours[0] + [min_x, min_y])
+
+        return split_contours
+
     # noinspection PyUnusedLocal
     def select_label(self, event):
         self.clear_drawn_regions()
@@ -1451,6 +1513,9 @@ class Application(tk.Frame):
 
         if mode == 3:
             current_label_code = -1
+        elif mode == 2:
+            # if splitting a region, the old one will be marked as deleted
+            current_label_code = -1
         elif current_label != '':
             current_label_code = self.label_option['values'].index(current_label)
             current_label_code += 1
@@ -1469,6 +1534,13 @@ class Application(tk.Frame):
         region_idx = int(tags[1])
         img_region_map = self.img_region_lut[self.current_img]
         labels = img_region_map['labels']
+
+        if mode == 2:
+            # split region into 2 parts
+            split_contours = self.split_region(region_idx)
+            for c in split_contours:
+                img_region_map['labels'].append(0)
+                img_region_map['candidates'].append(c)
 
         # toggle this region label between current label and unlabelled
         if labels[region_idx] == current_label_code:
