@@ -1131,8 +1131,6 @@ class Application(tk.Frame):
         )
 
     def run_segmentation(self, hsv_img, seg_config, cell_size, offset=None, dog_factor=7):
-        if self.current_img not in self.img_region_lut:
-            self.img_region_lut[self.current_img] = {}
         progress_callback = ProgressCallable(self.status_progress)
         candidates = pipeline.generate_structure_candidates(
             hsv_img,
@@ -1162,11 +1160,11 @@ class Application(tk.Frame):
                     biggest_candidate = c + [offset_x, offset_y]
 
             if biggest_candidate is not None:
-                self.img_region_lut[self.current_img]['candidates'].append(
-                    biggest_candidate
-                )
-                self.img_region_lut[self.current_img]['labels'].append(0)
+                self.save_contour(biggest_candidate)
         else:
+            if self.current_img not in self.img_region_lut:
+                self.img_region_lut[self.current_img] = {}
+
             self.img_region_lut[self.current_img]['candidates'] = candidates
 
             # candidate label = 0, structure labels = 1 -> len(structures)
@@ -1300,6 +1298,18 @@ class Application(tk.Frame):
             args=(region, seg_config, cell_size, offset, dog_factor),
             daemon=True
         ).start()
+
+    def save_contour(self, contour, label=0):
+        if self.current_img not in self.img_region_lut:
+            self.img_region_lut[self.current_img] = {
+                'labels': [],
+                'candidates': []
+            }
+
+        self.img_region_lut[self.current_img]['labels'].append(label)
+        self.img_region_lut[self.current_img]['candidates'].append(
+            contour
+        )
 
     def find_regions(self):
         # build micap pipeline, w/ seg stages based on 'has_part'
@@ -1507,10 +1517,7 @@ class Application(tk.Frame):
         # If there's not a current region index, create a new region
         # the region to the LUT on some other event (i.e. Enter key)
         if self.current_region_idx is None:
-            self.img_region_lut[self.current_img]['labels'].append(0)
-            self.img_region_lut[self.current_img]['candidates'].append(
-                new_points
-            )
+            self.save_contour(new_points)
         else:
             self.img_region_lut[self.current_img]['candidates'][self.current_region_idx] = new_points
 
@@ -1614,8 +1621,7 @@ class Application(tk.Frame):
             # split region into 2 parts
             split_contours = self.split_region(region_idx)
             for c in split_contours:
-                img_region_map['labels'].append(0)
-                img_region_map['candidates'].append(c)
+                self.save_contour(c)
 
         # toggle this region label between current label and unlabelled
         if labels[region_idx] == current_label_code:
