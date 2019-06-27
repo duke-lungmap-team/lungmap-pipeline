@@ -5,6 +5,7 @@ import threading
 import PIL.Image
 import PIL.ImageTk
 import json
+from collections import OrderedDict
 import numpy as np
 from sklearn.cluster import spectral_clustering
 from sklearn.feature_extraction import image as sk_image
@@ -38,6 +39,7 @@ WINDOW_HEIGHT = 924
 PAD_SMALL = 2
 PAD_MEDIUM = 4
 PAD_LARGE = 8
+HANDLE_RADIUS = 4  # not really a radius, just half a side length
 
 DEV_STAGES = [
     "E16.5",
@@ -97,6 +99,8 @@ class Application(tk.Frame):
         self.img_region_lut = {}
         self.current_img = None
         self.tk_image = None
+        self.current_region_idx = None
+        self.points = OrderedDict()
 
         self.rect = None
         self.start_x = None
@@ -386,6 +390,7 @@ class Application(tk.Frame):
         self.canvas.bind("<ButtonPress-3>", self.on_pan_button_press)
         self.canvas.bind("<B3-Motion>", self.pan_image)
         self.canvas.bind("<ButtonRelease-3>", self.on_pan_button_release)
+        self.canvas.bind("<Return>", self.save_drawn_polygon)
 
         self.pan_start_x = None
         self.pan_start_y = None
@@ -1035,6 +1040,8 @@ class Application(tk.Frame):
         if mode == 0:
             self.label_frame.pack_forget()
             self.find_regions_button.pack(side=tk.LEFT)
+        elif mode == 1:
+            self.points = OrderedDict()
         elif mode == 4:
             self.find_regions_button.pack_forget()
             self.label_frame.pack(side=tk.RIGHT)
@@ -1449,6 +1456,72 @@ class Application(tk.Frame):
     def on_pan_button_release(self, event):
         self.canvas.config(cursor='tcross')
 
+    def draw_point(self, event, override_focus=False):
+        # don't do anything unless the canvas has focus
+        if not isinstance(event.widget, tk.Canvas) and not override_focus:
+            return
+
+        if not override_focus:
+            cur_x = self.canvas.canvasx(event.x)
+            cur_y = self.canvas.canvasy(event.y)
+        else:
+            cur_x = event.x
+            cur_y = event.y
+
+        r = self.canvas.create_rectangle(
+            cur_x - HANDLE_RADIUS,
+            cur_y - HANDLE_RADIUS,
+            cur_x + HANDLE_RADIUS,
+            cur_y + HANDLE_RADIUS,
+            outline='#00ff00',
+            width=2,
+            tags='handle'
+        )
+
+        self.points[r] = [cur_x, cur_y]
+
+        if len(self.points) > 1:
+            self.draw_polygon()
+
+    def draw_polygon(self):
+        self.canvas.delete("dpoly")
+        self.canvas.create_polygon(
+            sum(self.points.values(), []),
+            tags="dpoly",
+            fill='',
+            outline='#00ff00',
+            dash=(5,),
+            width=2
+        )
+
+    # noinspection PyUnusedLocal
+    def save_drawn_polygon(self, event):
+        if self.mode_option.current() != 1:
+            # not in draw mode, so do nothing
+            return
+
+        # update region lookup table
+        new_points = np.array(list(self.points.values()), dtype=np.uint)
+        new_points = new_points / float(self.canvas_scale.get())
+
+        # If there's not a current region index, create a new region
+        # the region to the LUT on some other event (i.e. Enter key)
+        if self.current_region_idx is None:
+            self.img_region_lut[self.current_img]['labels'].append(0)
+            self.img_region_lut[self.current_img]['candidates'].append(
+                new_points
+            )
+        else:
+            self.img_region_lut[self.current_img]['candidates'][self.current_region_idx] = new_points
+
+        self.canvas.delete("dpoly")
+        self.canvas.delete("handle")
+
+        self.points = OrderedDict()
+
+        self.clear_drawn_regions()
+        self.draw_regions()
+
     def clear_drawn_regions(self):
         self.rect = None
         self.canvas.delete("rect")
@@ -1471,6 +1544,9 @@ class Application(tk.Frame):
         )
 
     def on_left_click(self, event):
+        # set focus to canvas
+        self.canvas.focus_set()
+
         # 'Find Regions',   mode=0
         # 'Draw Region',    mode=1
         # 'Split Region',   mode=2
@@ -1485,8 +1561,7 @@ class Application(tk.Frame):
             self.on_draw_button_press(event)
         elif mode == 1:
             # we're in draw region mode and need to start drawing a polygon
-            # TODO: make a draw polygon method
-            pass
+            self.draw_point(event)
         else:
             # For all other modes we try to select a region, that method will
             # will handle differences in these modes
