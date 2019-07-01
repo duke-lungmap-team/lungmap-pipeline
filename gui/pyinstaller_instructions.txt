@@ -1,0 +1,34 @@
+# Install latest stable version of Python 3 from python.org
+# Install Git and git-bash from git-scm.com
+
+mkdir git
+cd git/
+
+git clone https://github.com/duke-lungmap-team/microscopy-analysis-pipeline
+cd microscopy-analysis-pipeline/
+pip install -r requirements.txt
+py setup.py install
+py -m pip install ttkthemes
+cd ..
+
+git clone https://github.com/duke-lungmap-team/lungmap-utils
+cd lungmap-utils/
+py setup.py install
+cd ..
+
+git clone https://github.com/duke-lungmap-team/lungmap-pipeline
+git checkout -f -b gui --track origin/gui
+
+cd lungmap-pipeline/gui/
+
+py -m pip install pyinstaller
+pip install hooks
+pip install tornado
+
+# install Visual Studio first
+pip install pyamg
+
+cd git/lungmap-pipeline/
+cd gui/
+
+./build.sh
