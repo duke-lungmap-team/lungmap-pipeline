@@ -1,0 +1,117 @@
+{
+  "AGER": {
+    "has_part": [
+      "distal acinar tubule bud",
+      "proximal acinar tubule"
+    ],
+    "surrounded_by": []
+  },
+  "Anti-Abca3": {
+    "has_part": [
+      "distal acinar tubule bud"
+    ],
+    "surrounded_by": []
+  },
+  "Anti-Acta2": {
+    "has_part": [],
+    "surrounded_by": [
+      "pulmonary artery",
+      "blood_vessel",
+      "pulmonary vein",
+      "bronchiole"
+    ]
+  },
+  "Anti-Arl13B": {
+    "has_part": [
+      "distal acinar tubule bud",
+      "acinar tubule",
+      "neuroepithelial body",
+      "proximal acinar tubule",
+      "bronchiole"
+    ],
+    "surrounded_by": []
+  },
+  "Anti-Hopx": {
+    "has_part": [
+      "distal acinar tubule bud",
+      "proximal acinar tubule"
+    ],
+    "surrounded_by": []
+  },
+  "Anti-Nkx2-1": {
+    "has_part": [
+      "distal acinar tubule bud",
+      "acinar tubule",
+      "neuroepithelial body",
+      "proximal acinar tubule",
+      "bronchiole"
+    ],
+    "surrounded_by": []
+  },
+  "Anti-Pecam1": {
+    "has_part": [
+      "pulmonary artery",
+      "pulmonary lymphatic vessel",
+      "blood_vessel",
+      "pulmonary vein"
+    ],
+    "surrounded_by": []
+  },
+  "Anti-SCGB1A1": {
+    "has_part": [
+      "distal acinar tubule bud",
+      "acinar tubule",
+      "proximal acinar tubule",
+      "bronchiole"
+    ],
+    "surrounded_by": []
+  },
+  "Anti-Sftpc": {
+    "has_part": [
+      "distal acinar tubule bud",
+      "proximal acinar tubule"
+    ],
+    "surrounded_by": []
+  },
+  "Anti-Sox2": {
+    "has_part": [
+      "distal acinar tubule bud",
+      "acinar tubule",
+      "neuroepithelial body",
+      "proximal acinar tubule",
+      "bronchiole"
+    ],
+    "surrounded_by": []
+  },
+  "Anti-Sox9": {
+    "has_part": [
+      "distal acinar tubule bud"
+    ],
+    "surrounded_by": []
+  },
+  "Anti-Vimentin": {
+    "has_part": [],
+    "surrounded_by": []
+  },
+  "Anti-p-Histone H3": {
+    "has_part": [
+      "distal acinar tubule bud",
+      "bronchiole"
+    ],
+    "surrounded_by": []
+  },
+  "Anti-pHisH3": {
+    "has_part": [
+      "distal acinar tubule bud",
+      "bronchiole"
+    ],
+    "surrounded_by": []
+  },
+  "SFTPC": {
+    "has_part": [
+      "distal acinar tubule bud",
+      "proximal acinar tubule"
+    ],
+    "surrounded_by": []
+  }
+}

@@ -5,12 +5,16 @@ import threading
 import PIL.Image
 import PIL.ImageTk
 import json
+from collections import OrderedDict
 import numpy as np
+from sklearn.cluster import spectral_clustering
+from sklearn.feature_extraction import image as sk_image
 import lungmap_utils
 from micap import utils as micap_utils, pipeline
-from gui import utils as gui_utils
 
-ontology = gui_utils.onto
+pm_map_file = open('resources/probe_structure_map.json', 'r')
+PROBE_STRUCTURE_MAP = json.load(pm_map_file)
+pm_map_file.close()
 
 # weird import style to un-confuse PyCharm
 try:
@@ -20,19 +24,22 @@ except ImportError:
 
 BACKGROUND_COLOR = '#ededed'
 BORDER_COLOR = '#bebebe'
+TEXT_COLOR = '#5c616c'
 HIGHLIGHT_COLOR = '#5294e2'
 REGION_COLORS = {
-    'candidate': '#ff8000',
-    'current_label': '#00ff00',
-    'other_label': '#ff00ff'
+    'candidate': '#ffdd00',
+    'current_label': '#00dd80',
+    'other_label': '#ff00ff',
+    'deleted': '#ff0000'
 }
 
-WINDOW_WIDTH = 820
-WINDOW_HEIGHT = 920
+WINDOW_WIDTH = 980
+WINDOW_HEIGHT = 924
 
 PAD_SMALL = 2
 PAD_MEDIUM = 4
 PAD_LARGE = 8
+HANDLE_RADIUS = 4  # not really a radius, just half a side length
 
 DEV_STAGES = [
     "E16.5",
@@ -49,10 +56,13 @@ MAG_VALUES = [
 ]
 
 SCALE_VALUES = [
-    "0.25",
-    "0.50",
-    "0.75",
-    "1.00"
+    "0.250",
+    "0.375",
+    "0.500",
+    "0.625",
+    "0.750",
+    "0.875",
+    "1.000"
 ]
 
 PROBES = lungmap_utils.client.get_probes()
@@ -77,8 +87,8 @@ class Application(tk.Frame):
         self.master.config(bg=BACKGROUND_COLOR)
         self.master.title("LungMAP Region Generator")
 
-        check_button_style = ttk.Style()
-        check_button_style.configure(
+        my_styles = ttk.Style()
+        my_styles.configure(
             'Default.TCheckbutton',
             background=BACKGROUND_COLOR
         )
@@ -89,7 +99,19 @@ class Application(tk.Frame):
         self.img_region_lut = {}
         self.current_img = None
         self.tk_image = None
+        self.current_region_idx = None
+        self.points = OrderedDict()
 
+        self.rect = None
+        self.start_x = None
+        self.start_y = None
+
+        # Valid modes are:
+        #    - 'find_all': for running the full seg pipeline
+        #    - 'find': for segmenting a single region in a drawn rectangle
+        #    - 'delete': for deleting one region at a time
+        #    - 'split': for splitting a region into 2 new regions
+        self.mode = tk.StringVar(self.master)
         self.current_dev_stage = tk.StringVar(self.master)
         self.current_dev_stage.set(DEV_STAGES[0])
         self.current_mag = tk.StringVar(self.master)
@@ -97,15 +119,21 @@ class Application(tk.Frame):
         self.current_probe1 = tk.StringVar(self.master)
         self.current_probe1.set('Anti-Acta2')
         self.current_probe2 = tk.StringVar(self.master)
+        self.current_probe2.set('Anti-Sox9')
         self.current_probe3 = tk.StringVar(self.master)
+        self.current_probe3.set('Anti-Sftpc')
         self.display_preprocessed = tk.BooleanVar(self.master)
+        self.hide_current_label = tk.BooleanVar(self.master)
         self.hide_other = tk.BooleanVar(self.master)
         self.hide_unlabelled = tk.BooleanVar(self.master)
+        self.show_deleted = tk.BooleanVar(self.master)
+        self.show_deleted.set(False)
         self.status_message = tk.StringVar(self.master)
         self.current_label = tk.StringVar(self.master)
         self.canvas_scale = tk.StringVar(self.master)
-        self.canvas_scale.set('1.00')
+        self.canvas_scale.set('0.500')
         self.status_progress = tk.IntVar(self.master)
+        self.query_status_var = tk.StringVar(self.master)
 
         self.dev_stage_option = None
         self.mag_option = None
@@ -135,22 +163,13 @@ class Application(tk.Frame):
             pady=PAD_MEDIUM
         )
 
-        image_toolbar_frame = tk.Frame(main_frame, bg=BACKGROUND_COLOR)
-        image_toolbar_frame.pack(
-            fill=tk.X,
-            expand=False,
-            anchor=tk.N,
-            padx=PAD_LARGE,
-            pady=PAD_SMALL
-        )
-
-        bottom_frame = tk.Frame(main_frame, bg=BACKGROUND_COLOR)
-        bottom_frame.pack(
+        middle_frame = tk.Frame(main_frame, bg=BACKGROUND_COLOR)
+        middle_frame.pack(
             fill='both',
             expand=True,
             anchor='n',
-            padx=PAD_MEDIUM,
-            pady=PAD_SMALL
+            padx=PAD_LARGE,
+            pady=0
         )
 
         file_chooser_button_frame = tk.Frame(
@@ -218,37 +237,38 @@ class Application(tk.Frame):
             pady=PAD_SMALL
         )
 
-        self.find_regions_button = ttk.Button(
-            image_toolbar_frame,
-            text='Find Regions',
-            command=self.find_regions
-        )
-        self.find_regions_button.pack(side=tk.LEFT, anchor=tk.N)
-
-        display_preprocessed_cb = ttk.Checkbutton(
-            image_toolbar_frame,
-            text="Display pre-processed image",
-            variable=self.display_preprocessed,
-            style='Default.TCheckbutton',
-            command=self.select_image
-        )
-        display_preprocessed_cb.pack(
-            side=tk.LEFT,
-            padx=PAD_MEDIUM
+        middle_left_frame = tk.Frame(middle_frame, bg=BACKGROUND_COLOR)
+        middle_left_frame.pack(
+            fill=tk.BOTH,
+            expand=True,
+            anchor=tk.N,
+            side='left',
+            padx=(0, PAD_SMALL),
+            pady=0
         )
 
-        ttk.Separator(
-            image_toolbar_frame,
-            orient=tk.VERTICAL
-        ).pack(
-            side=tk.LEFT,
-            fill='y',
-            padx=PAD_MEDIUM
+        middle_right_frame = tk.Frame(middle_frame, bg=BACKGROUND_COLOR)
+        middle_right_frame.pack(
+            fill=tk.Y,
+            expand=False,
+            anchor=tk.N,
+            side='right',
+            padx=(PAD_SMALL, 0),
+            pady=(32, PAD_MEDIUM)
+        )
+
+        image_toolbar_frame = tk.Frame(middle_left_frame, bg=BACKGROUND_COLOR)
+        image_toolbar_frame.pack(
+            fill=tk.X,
+            expand=False,
+            anchor=tk.N,
+            padx=0,
+            pady=PAD_SMALL
         )
 
         ttk.Label(
             image_toolbar_frame,
-            text="Scale image:",
+            text="Select Mode:",
             background=BACKGROUND_COLOR
         ).pack(
             side=tk.LEFT,
@@ -256,73 +276,58 @@ class Application(tk.Frame):
             expand=False,
             padx=PAD_MEDIUM
         )
-        scale_option = ttk.Combobox(
+
+        self.mode_option = ttk.Combobox(
             image_toolbar_frame,
-            values=SCALE_VALUES,
-            textvariable=self.canvas_scale,
-            state='readonly',
-            width=4
+            textvariable=self.mode,
+            state='readonly'
         )
-        scale_option.bind('<<ComboboxSelected>>', self.select_image)
-        scale_option.pack(
+        self.mode_option['values'] = [
+            'Find Regions',  # mode=0
+            'Draw Region',  # mode=1
+            'Split Region',  # mode=2
+            'Delete Regions',  # mode=3
+            'Label Regions'  # mode=4
+        ]
+        self.mode_option.bind('<<ComboboxSelected>>', self.select_mode)
+        self.mode_option.pack(
             side=tk.LEFT,
-            fill='none',
+            fill=tk.X,
             expand=False,
-            padx=PAD_MEDIUM
+            padx=0
         )
 
-        ttk.Separator(
+        self.find_regions_button = ttk.Button(
             image_toolbar_frame,
-            orient=tk.VERTICAL
-        ).pack(
-            side=tk.LEFT,
-            fill='y',
-            padx=PAD_MEDIUM
+            text='Find Regions',
+            command=self.find_regions
         )
+        self.find_regions_button.pack(side=tk.LEFT, anchor=tk.N)
+        self.find_regions_button.pack_forget()
 
-        hide_other_cb = ttk.Checkbutton(
-            image_toolbar_frame,
-            text="Hide other labels",
-            variable=self.hide_other,
-            style='Default.TCheckbutton',
-            command=self.select_image
+        self.label_frame = tk.Frame(image_toolbar_frame, bg=BACKGROUND_COLOR)
+        self.label_frame.pack(
+            fill=tk.X,
+            expand=False,
+            side=tk.RIGHT,
+            padx=0,
+            pady=0
         )
-        hide_other_cb.pack(
-            side=tk.LEFT,
-            padx=PAD_MEDIUM
-        )
-
-        ttk.Separator(
-            image_toolbar_frame,
-            orient=tk.VERTICAL
-        ).pack(
-            side=tk.LEFT,
-            fill='y',
-            padx=PAD_MEDIUM
-        )
-
-        hide_unlabelled_cb = ttk.Checkbutton(
-            image_toolbar_frame,
-            text="Hide unlabelled",
-            variable=self.hide_unlabelled,
-            style='Default.TCheckbutton',
-            command=self.select_image
-        )
-        hide_unlabelled_cb.pack(
-            side=tk.LEFT,
-            padx=PAD_MEDIUM
-        )
-
         self.label_option = ttk.Combobox(
-            image_toolbar_frame,
+            self.label_frame,
             textvariable=self.current_label,
             state='readonly'
         )
         self.label_option.bind('<<ComboboxSelected>>', self.select_label)
-        self.label_option.pack(side=tk.RIGHT, fill='x', expand=False)
+        self.label_option.pack(
+            side=tk.RIGHT,
+            fill=tk.X,
+            expand=False,
+            padx=0
+        )
 
         ttk.Label(
-            image_toolbar_frame,
+            self.label_frame,
             text="Assign label:",
             background=BACKGROUND_COLOR
         ).pack(
@@ -331,29 +336,21 @@ class Application(tk.Frame):
             expand=False,
             padx=PAD_MEDIUM
         )
-
-        ttk.Separator(
-            image_toolbar_frame,
-            orient=tk.VERTICAL
-        ).pack(
-            side=tk.RIGHT,
-            fill='y',
-            padx=PAD_MEDIUM
-        )
+        self.label_frame.pack_forget()
 
         # the canvas frame's contents will use grid b/c of the double
         # scrollbar (they don't look right using pack), but the canvas itself
         # will be packed in its frame
-        canvas_frame = tk.Frame(bottom_frame, bg=BACKGROUND_COLOR)
+        canvas_frame = tk.Frame(middle_left_frame, bg=BACKGROUND_COLOR)
         canvas_frame.grid_rowconfigure(0, weight=1)
         canvas_frame.grid_columnconfigure(0, weight=1)
         canvas_frame.pack(
             fill=tk.BOTH,
             expand=True,
             anchor=tk.N,
-            side='right',
-            padx=PAD_MEDIUM,
-            pady=PAD_MEDIUM
+            side='left',
+            padx=0,
+            pady=0
         )
 
         self.canvas = tk.Canvas(
@@ -384,16 +381,138 @@ class Application(tk.Frame):
         self.scrollbar_v.grid(row=0, column=1, sticky=tk.N + tk.S)
         self.scrollbar_h.grid(row=1, column=0, sticky=tk.E + tk.W)
 
-        self.canvas.bind("<Button-1>", self.select_region)
+        self.canvas.bind("<Button-1>", self.on_left_click)
+        self.canvas.bind("<B1-Motion>", self.on_draw_move)
+        self.canvas.bind("<ButtonRelease-1>", self.on_draw_release)
         self.canvas.bind("<ButtonPress-2>", self.on_pan_button_press)
         self.canvas.bind("<B2-Motion>", self.pan_image)
         self.canvas.bind("<ButtonRelease-2>", self.on_pan_button_release)
         self.canvas.bind("<ButtonPress-3>", self.on_pan_button_press)
         self.canvas.bind("<B3-Motion>", self.pan_image)
         self.canvas.bind("<ButtonRelease-3>", self.on_pan_button_release)
+        self.canvas.bind("<Return>", self.save_drawn_polygon)
 
         self.pan_start_x = None
         self.pan_start_y = None
+
+        display_opt_frame = tk.LabelFrame(
+            middle_right_frame,
+            text="Display Options",
+            background=BACKGROUND_COLOR,
+            foreground=TEXT_COLOR
+        )
+        display_opt_frame.pack(
+            fill=tk.X,
+            expand=False,
+            anchor=tk.N
+        )
+
+        image_scale_frame = tk.Frame(display_opt_frame, bg=BACKGROUND_COLOR)
+        image_scale_frame.pack(
+            fill=tk.X,
+            expand=False,
+            anchor=tk.W,
+            side=tk.TOP,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+        ttk.Label(
+            image_scale_frame,
+            text="Scale image:",
+            background=BACKGROUND_COLOR
+        ).pack(
+            side=tk.LEFT,
+            fill='none',
+            expand=False,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+        scale_option = ttk.Combobox(
+            image_scale_frame,
+            values=SCALE_VALUES,
+            textvariable=self.canvas_scale,
+            state='readonly',
+            width=5
+        )
+        scale_option.bind('<<ComboboxSelected>>', self.select_image)
+        scale_option.pack(
+            side=tk.RIGHT,
+            fill='none',
+            expand=False,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        self.display_preprocessed_cb = ttk.Checkbutton(
+            display_opt_frame,
+            text="Display pre-processed image",
+            variable=self.display_preprocessed,
+            style='Default.TCheckbutton',
+            command=self.select_image
+        )
+        self.display_preprocessed_cb.state(['disabled'])
+        self.display_preprocessed_cb.pack(
+            anchor=tk.W,
+            side=tk.TOP,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        hide_current_cb = ttk.Checkbutton(
+            display_opt_frame,
+            text="Hide current label",
+            variable=self.hide_current_label,
+            style='Default.TCheckbutton',
+            command=self.select_image
+        )
+        hide_current_cb.pack(
+            anchor=tk.W,
+            side=tk.TOP,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        hide_other_cb = ttk.Checkbutton(
+            display_opt_frame,
+            text="Hide other labels",
+            variable=self.hide_other,
+            style='Default.TCheckbutton',
+            command=self.select_image
+        )
+        hide_other_cb.pack(
+            anchor=tk.W,
+            side=tk.TOP,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        hide_unlabelled_cb = ttk.Checkbutton(
+            display_opt_frame,
+            text="Hide unlabelled regions",
+            variable=self.hide_unlabelled,
+            style='Default.TCheckbutton',
+            command=self.select_image
+        )
+        hide_unlabelled_cb.pack(
+            anchor=tk.W,
+            side=tk.TOP,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
+
+        show_deleted_cb = ttk.Checkbutton(
+            display_opt_frame,
+            text="Show deleted regions",
+            variable=self.show_deleted,
+            style='Default.TCheckbutton',
+            command=self.select_image
+        )
+        show_deleted_cb.pack(
+            anchor=tk.W,
+            side=tk.TOP,
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
+        )
 
         status_progress_frame = tk.Frame(main_frame, bg=BACKGROUND_COLOR)
         status_progress_frame.pack(
@@ -609,15 +728,29 @@ class Application(tk.Frame):
             fill='x',
             expand=False,
             anchor=tk.N,
-            padx=PAD_SMALL,
-            pady=PAD_SMALL
+            padx=PAD_MEDIUM,
+            pady=PAD_MEDIUM
         )
         query_button = ttk.Button(
             query_button_frame,
             text="Run Query",
             command=self.query_images
         )
-        query_button.pack(anchor=tk.E)
+        query_button.pack(
+            anchor=tk.E,
+            side=tk.RIGHT
+        )
+        self.query_status_var.set('')
+        query_status_label = ttk.Label(
+            query_button_frame,
+            textvariable=self.query_status_var,
+            background=BACKGROUND_COLOR
+        )
+        query_status_label.pack(
+            side=tk.RIGHT,
+            fill=tk.X,
+            padx=PAD_MEDIUM
+        )
 
         file_chooser_frame = tk.Frame(lm_query_top, bg=BACKGROUND_COLOR)
         file_chooser_frame.pack(
@@ -709,17 +842,20 @@ class Application(tk.Frame):
         probe3 = self.current_probe3.get()
         probes = [probe1, probe2, probe3]
 
-        # TODO: show error dialog if any metadata field was not selected
+        all_options = [dev_stage, mag]
+        all_options.extend(probes)
+
+        if '' in all_options:
+            self.query_status_var.set(
+                "All the above options are required"
+            )
+            return
+        else:
+            self.query_status_var.set('')
+            self.update()
 
         lm_images = lungmap_utils.client.get_images_by_metadata(
             dev_stage, mag, probes
-        )
-
-        # will query ontology structures here b/c we can do it once for
-        # all these images instead of for each image
-        probe_structure_dict = gui_utils.get_probe_structure_map(
-            ontology,
-            probes
         )
 
         # clear the list box & queried_images
@@ -741,7 +877,7 @@ class Application(tk.Frame):
                 'mag': mag,
                 'probes': probes,
                 'probe_colors': probe_colors,
-                'probe_structure_map': probe_structure_dict
+                'probe_structure_map': PROBE_STRUCTURE_MAP
             }
 
             self.query_results_list_box.insert(tk.END, image_name)
@@ -781,6 +917,13 @@ class Application(tk.Frame):
             self.download_progress_bar.update()
 
     def _preprocess_images(self):
+        # need at least 2 images to do pre-processing since one must be chosen
+        # as the reference
+        if len(self.images) < 2:
+            self.preprocess_images_button.config(state=tk.NORMAL)
+            self.status_message.set("Pre-processing requires at least 2 images")
+            return
+
         sorted_img_names = sorted(self.images.keys())
 
         # for progress status updates
@@ -821,6 +964,8 @@ class Application(tk.Frame):
         self.preprocess_images_button.config(state=tk.NORMAL)
         self.status_message.set("Pre-processing finished")
 
+        self.select_image()
+
     def preprocess_images(self):
         self.status_message.set("Pre-processing images...")
         self.preprocess_images_button.config(state=tk.DISABLED)
@@ -835,9 +980,15 @@ class Application(tk.Frame):
         self.current_img = self.file_list_box.get(current_sel[0])
 
         has_corr = self.images[self.current_img]['corr_rgb_img'] is not None
+
+        if not has_corr:
+            self.display_preprocessed.set(False)
+            self.display_preprocessed_cb.state(['disabled'])
+        else:
+            self.display_preprocessed_cb.state(['!disabled'])
+
         display_corr = self.display_preprocessed.get()
         structures = self.images[self.current_img]['probe_structure_map']
-
         display_structures = set()
 
         for probe, structure_map in structures.items():
@@ -877,13 +1028,34 @@ class Application(tk.Frame):
         )
         self.draw_regions()
 
-    def draw_regions(self):
-        if self.current_img not in self.img_region_lut:
-            return
+    # noinspection PyUnusedLocal
+    def select_mode(self, event=None):
+        # 'Find Regions',   mode=0
+        # 'Draw Region',    mode=1
+        # 'Split Region',   mode=2
+        # 'Delete Regions', mode=3
+        # 'Label Regions'   mode=4
+        mode = self.mode_option.current()
 
-        img_region_map = self.img_region_lut[self.current_img]
-        candidates = img_region_map['candidates']
-        labels = img_region_map['labels']
+        if mode == 0:
+            self.label_frame.pack_forget()
+            self.find_regions_button.pack(side=tk.LEFT)
+        elif mode == 1:
+            self.points = OrderedDict()
+        elif mode == 4:
+            self.find_regions_button.pack_forget()
+            self.label_frame.pack(side=tk.RIGHT)
+        else:
+            self.label_frame.pack_forget()
+            self.find_regions_button.pack_forget()
+
+    def draw_regions(self):
+        try:
+            img_region_map = self.img_region_lut[self.current_img]
+            candidates = img_region_map['candidates']
+            labels = img_region_map['labels']
+        except KeyError:
+            return
 
         canvas_scale = float(self.canvas_scale.get())
 
@@ -894,8 +1066,10 @@ class Application(tk.Frame):
             current_label_code = self.label_option['values'].index(current_label)
             current_label_code += 1
 
+        hide_current = self.hide_current_label.get()
         hide_other = self.hide_other.get()
         hide_unlabelled = self.hide_unlabelled.get()
+        show_deleted = self.show_deleted.get()
 
         current_count = 0
         other_count = 0
@@ -904,12 +1078,17 @@ class Application(tk.Frame):
         for i, c in enumerate(candidates):
             # label codes:
             #     candidate == 0 (means an unlabelled region)
+            #     deleted == -1
             #     >0 means sorted labels index + 1
             if labels[i] == 0:
                 region_type = 'candidate'
                 stipple = None
                 fill = ''
                 unlabelled_count += 1
+            elif labels[i] == -1:
+                region_type = 'deleted'
+                stipple = None
+                fill = ''
             elif labels[i] == current_label_code:
                 region_type = 'current_label'
                 stipple = 'gray12'
@@ -921,9 +1100,13 @@ class Application(tk.Frame):
                 fill = REGION_COLORS[region_type]
                 other_count += 1
 
+            if hide_current and region_type == 'current_label':
+                continue
             if hide_other and region_type == 'other_label':
                 continue
             if hide_unlabelled and region_type == 'candidate':
+                continue
+            if not show_deleted and region_type == 'deleted':
                 continue
 
             self.canvas.create_polygon(
@@ -947,39 +1130,54 @@ class Application(tk.Frame):
             )
         )
 
-    def run_segmentation(self, hsv_img, seg_config, cell_size):
-        if self.current_img not in self.img_region_lut:
-            self.img_region_lut[self.current_img] = {}
+    def run_segmentation(self, hsv_img, seg_config, cell_size, offset=None, dog_factor=7):
         progress_callback = ProgressCallable(self.status_progress)
         candidates = pipeline.generate_structure_candidates(
             hsv_img,
             seg_config,
             filter_min_size=3 * cell_size,
-            dog_factor=7,
+            dog_factor=dog_factor,
             process_residual=False,
             plot=False,
             progress_callback=progress_callback
         )
 
-        self.img_region_lut[self.current_img]['candidates'] = candidates
+        if self.rect is not None and self.current_img is not None:
+            # there's a rectangle, so we only want one region returned
+            if offset is not None:
+                offset_x = offset[0]
+                offset_y = offset[1]
+            else:
+                offset_x = 0
+                offset_y = 0
 
-        # candidate label = 0, structure labels = 1 -> len(structures)
-        self.img_region_lut[self.current_img]['labels'] = list(
-            np.zeros(len(candidates))
-        )
+            biggest_candidate = None
+            largest_area = 0
 
+            for c in candidates:
+                area = cv2.contourArea(c)
+                if area > largest_area:
+                    biggest_candidate = c + [offset_x, offset_y]
+
+            if biggest_candidate is not None:
+                self.save_contour(biggest_candidate)
+        else:
+            if self.current_img not in self.img_region_lut:
+                self.img_region_lut[self.current_img] = {}
+
+            self.img_region_lut[self.current_img]['candidates'] = candidates
+
+            # candidate label = 0, structure labels = 1 -> len(structures)
+            self.img_region_lut[self.current_img]['labels'] = list(
+                np.zeros(len(candidates), dtype=np.uint32)
+            )
+
+        self.clear_drawn_regions()
         self.draw_regions()
-        self.status_progress = 0
+        self.status_progress.set(0)
         self.find_regions_button.config(state=tk.NORMAL)
 
-    def find_regions(self):
-        # build micap pipeline, w/ seg stages based on 'has_part'
-        # and 'surrounded_by' probe/structure mappings
-
-        # first, check that an image is selected
-        if self.current_img is None:
-            return
-
+    def build_seg_config(self, cell_size, kernel_adjustments=(0,)):
         # build seg config for current image
         probes = self.images[self.current_img]['probes']
         probe_colors = [
@@ -1013,44 +1211,72 @@ class Application(tk.Frame):
         if 'white' in non_has_part_colors:
             non_has_part_colors.add('gray')
 
-        cell_radius = 16
-        cell_size = np.pi * (cell_radius ** 2)
+        seg_config = []
+        for k in kernel_adjustments:
+            seg_config.append(
+                # 1st seg stage uses 'has_part colors'
+                {
+                    'type': 'color',
+                    'args': {
+                        'blur_kernel': (15 + k, 15 + k),
+                        'min_size': 3 * cell_size,
+                        'max_size': None,
+                        'colors': has_part_colors
+                    }
+                }
+            )
+            seg_config.append(
+                # 2nd - 4th stages are saturation stages of descending sizes
+                {
+                    'type': 'saturation',
+                    'args': {
+                        'blur_kernel': (95 + k, 95 + k),
+                        'min_size': 3 * cell_size,
+                        'max_size': None
+                    }
+                }
+            )
+            seg_config.append(
+                {
+                    'type': 'saturation',
+                    'args': {
+                        'blur_kernel': (31 + k, 31 + k),
+                        'min_size': 3 * cell_size,
+                        'max_size': None
+                    }
+                }
+            )
+            seg_config.append(
+                {
+                    'type': 'saturation',
+                    'args': {
+                        'blur_kernel': (15 + k, 15 + k),
+                        'min_size': 3 * cell_size,
+                        'max_size': None
+                    }
+                }
+            )
+            seg_config.append(
+                # final stage is a color stage on the non has part colors
+                {
+                    'type': 'color',
+                    'args': {
+                        'blur_kernel': (7 + k, 7 + k),
+                        'min_size': 3 * cell_size,
+                        'max_size': None,
+                        'colors': non_has_part_colors
+                    }
+                }
+            )
 
-        seg_config = [
-            # 1st seg stage uses 'has_part colors'
-            {
-                'type': 'color',
-                'args': {
-                    'blur_kernel': (15, 15),
-                    'min_size': 3 * cell_size,
-                    'max_size': None,
-                    'colors': has_part_colors
-                }
-            },
-            # 2nd - 4th stages are saturation stages of descending sizes
-            {
-                'type': 'saturation',
-                'args': {'blur_kernel': (95, 95), 'min_size': 3 * cell_size, 'max_size': None}
-            },
-            {
-                'type': 'saturation',
-                'args': {'blur_kernel': (31, 31), 'min_size': 3 * cell_size, 'max_size': None}
-            },
-            {
-                'type': 'saturation',
-                'args': {'blur_kernel': (15, 15), 'min_size': 3 * cell_size, 'max_size': None}
-            },
-            # final stage is a color stage on the non has part colors
-            {
-                'type': 'color',
-                'args': {
-                    'blur_kernel': (7, 7),
-                    'min_size': 3 * cell_size,
-                    'max_size': None,
-                    'colors': non_has_part_colors
-                }
-            },
-        ]
+        return seg_config
+
+    def find_sub_region(self, cell_size):
+        if self.rect is None or self.current_img is None:
+            return
+
+        corners = self.canvas.coords(self.rect)
+        corners = tuple([int(c / float(self.canvas_scale.get())) for c in corners])
 
         if self.images[self.current_img]['corr_rgb_img'] is not None:
             hsv_img = cv2.cvtColor(
@@ -1060,18 +1286,167 @@ class Application(tk.Frame):
         else:
             hsv_img = self.images[self.current_img]['hsv_img']
 
+        region = hsv_img[corners[1]:corners[3], corners[0]:corners[2], :]
+        offset = (corners[0], corners[1])
+
+        seg_config = self.build_seg_config(cell_size, kernel_adjustments=(-2, 2))
+
         self.status_message.set("Finding regions...")
-        self.find_regions_button.config(state=tk.DISABLED)
+        dog_factor = 4
         threading.Thread(
             target=self.run_segmentation,
-            args=(hsv_img, seg_config, cell_size),
+            args=(region, seg_config, cell_size, offset, dog_factor),
             daemon=True
         ).start()
+
+    def save_contour(self, contour, label=0):
+        if self.current_img not in self.img_region_lut:
+            self.img_region_lut[self.current_img] = {
+                'labels': [],
+                'candidates': []
+            }
+
+        self.img_region_lut[self.current_img]['labels'].append(label)
+        self.img_region_lut[self.current_img]['candidates'].append(
+            contour
+        )
+
+    def find_regions(self):
+        # build micap pipeline, w/ seg stages based on 'has_part'
+        # and 'surrounded_by' probe/structure mappings
+
+        # first, check that an image is selected
+        if self.current_img is None:
+            return
+
+        cell_radius = 16
+        cell_size = np.pi * (cell_radius ** 2)
+
+        # Next, see if we're evaluating a sub-region
+        if self.rect is not None:
+            # there's a rectangle, so find sub-region
+            self.find_sub_region(cell_size)
+            return
+
+        if self.images[self.current_img]['corr_rgb_img'] is not None:
+            hsv_img = cv2.cvtColor(
+                self.images[self.current_img]['corr_rgb_img'],
+                cv2.COLOR_RGB2HSV
+            )
+        else:
+            hsv_img = self.images[self.current_img]['hsv_img']
+
+        seg_config = self.build_seg_config(cell_size)
+
+        self.status_message.set("Finding regions...")
+        threading.Thread(
+            target=self.run_segmentation,
+            args=(hsv_img, seg_config, cell_size, None),
+            daemon=True
+        ).start()
+
+    def split_region(self, region_idx):
+        img_region_map = self.img_region_lut[self.current_img]
+        contour = img_region_map['candidates'][region_idx]
+
+        min_x, min_y, w, h = cv2.boundingRect(contour)
+        max_x, max_y = min_x + w, min_y + h
+        mc_x = contour - [min_x, min_y]
+
+        split_mask_x = np.zeros((h, w), dtype=np.uint8)
+        cv2.drawContours(split_mask_x, [mc_x], -1, 1, -1)
+
+        if self.images[self.current_img]['corr_rgb_img'] is not None:
+            hsv_img = cv2.cvtColor(
+                self.images[self.current_img]['corr_rgb_img'],
+                cv2.COLOR_RGB2HSV
+            )
+        else:
+            hsv_img = self.images[self.current_img]['hsv_img']
+
+        # use just the value channel
+        signal_img = hsv_img[min_y:max_y, min_x:max_x, 2]
+
+        # Convert the image into a graph with the value of the gradient on the
+        # edges.
+        region_graph = sk_image.img_to_graph(
+            signal_img,
+            mask=split_mask_x.astype(np.bool)
+        )
+
+        # Take a decreasing function of the gradient: we take it weakly
+        # dependent from the gradient the segmentation is close to a voronoi
+        region_graph.data = np.exp(-region_graph.data / region_graph.data.std())
+
+        n_clusters = 2
+
+        labels = spectral_clustering(
+            region_graph,
+            n_clusters=n_clusters,
+            eigen_solver='amg',
+            n_init=10
+        )
+
+        label_im = np.full(split_mask_x.shape, -1.)
+        label_im[split_mask_x.astype(np.bool)] = labels
+
+        split_contours = []
+
+        for label in range(n_clusters):
+            new_mask = label_im == label
+
+            contours, _ = cv2.findContours(
+                new_mask.astype(np.uint8),
+                cv2.RETR_EXTERNAL,
+                cv2.CHAIN_APPROX_SIMPLE
+            )
+
+            split_contours.append(contours[0] + [min_x, min_y])
+
+        return split_contours
 
     # noinspection PyUnusedLocal
     def select_label(self, event):
         self.clear_drawn_regions()
         self.draw_regions()
+
+    def on_draw_button_press(self, event):
+        # starting coordinates
+        self.start_x = self.canvas.canvasx(event.x)
+        self.start_y = self.canvas.canvasy(event.y)
+
+        # create a new rectangle if we don't already have one
+        if self.rect is None:
+            self.rect = self.canvas.create_rectangle(
+                self.start_x,
+                self.start_y,
+                self.start_x,
+                self.start_y,
+                outline='#00ff00',
+                width=2,
+                tags=('rect',)
+            )
+
+    def on_draw_move(self, event):
+        # 'Find Regions',   mode=0
+        # 'Draw Region',    mode=1
+        # 'Split Region',   mode=2
+        # 'Delete Regions', mode=3
+        # 'Label Regions'   mode=4
+        mode = self.mode_option.current()
+
+        if mode != 0:
+            return
+
+        cur_x = self.canvas.canvasx(event.x)
+        cur_y = self.canvas.canvasy(event.y)
+
+        # update rectangle size with mouse position
+        self.canvas.coords(self.rect, self.start_x, self.start_y, cur_x, cur_y)
+
+    # noinspection PyUnusedLocal
+    def on_draw_release(self, event):
+        pass
 
     def on_pan_button_press(self, event):
         self.canvas.config(cursor='fleur')
@@ -1091,7 +1466,72 @@ class Application(tk.Frame):
     def on_pan_button_release(self, event):
         self.canvas.config(cursor='tcross')
 
+    def draw_point(self, event, override_focus=False):
+        # don't do anything unless the canvas has focus
+        if not isinstance(event.widget, tk.Canvas) and not override_focus:
+            return
+
+        if not override_focus:
+            cur_x = self.canvas.canvasx(event.x)
+            cur_y = self.canvas.canvasy(event.y)
+        else:
+            cur_x = event.x
+            cur_y = event.y
+
+        r = self.canvas.create_rectangle(
+            cur_x - HANDLE_RADIUS,
+            cur_y - HANDLE_RADIUS,
+            cur_x + HANDLE_RADIUS,
+            cur_y + HANDLE_RADIUS,
+            outline='#00ff00',
+            width=2,
+            tags='handle'
+        )
+
+        self.points[r] = [cur_x, cur_y]
+
+        if len(self.points) > 1:
+            self.draw_polygon()
+
+    def draw_polygon(self):
+        self.canvas.delete("dpoly")
+        self.canvas.create_polygon(
+            sum(self.points.values(), []),
+            tags="dpoly",
+            fill='',
+            outline='#00ff00',
+            dash=(5,),
+            width=2
+        )
+
+    # noinspection PyUnusedLocal
+    def save_drawn_polygon(self, event):
+        if self.mode_option.current() != 1:
+            # not in draw mode, so do nothing
+            return
+
+        # update region lookup table
+        new_points = np.array(list(self.points.values()), dtype=np.uint)
+        new_points = new_points / float(self.canvas_scale.get())
+
+        # If there's not a current region index, create a new region
+        # the region to the LUT on some other event (i.e. Enter key)
+        if self.current_region_idx is None:
+            self.save_contour(new_points)
+        else:
+            self.img_region_lut[self.current_img]['candidates'][self.current_region_idx] = new_points
+
+        self.canvas.delete("dpoly")
+        self.canvas.delete("handle")
+
+        self.points = OrderedDict()
+
+        self.clear_drawn_regions()
+        self.draw_regions()
+
     def clear_drawn_regions(self):
+        self.rect = None
+        self.canvas.delete("rect")
         self.canvas.delete("poly")
 
     def save_regions_json(self):
@@ -1110,16 +1550,59 @@ class Application(tk.Frame):
             default=my_converter
         )
 
+    def on_left_click(self, event):
+        # set focus to canvas
+        self.canvas.focus_set()
+
+        # 'Find Regions',   mode=0
+        # 'Draw Region',    mode=1
+        # 'Split Region',   mode=2
+        # 'Delete Regions', mode=3
+        # 'Label Regions'   mode=4
+        mode = self.mode_option.current()
+
+        if mode == 0:
+            # we're in find region mode, and the user clicked on the canvas.
+            # This means they want to find a single region in a specific place
+            # start drawing a rectangle
+            self.on_draw_button_press(event)
+        elif mode == 1:
+            # we're in draw region mode and need to start drawing a polygon
+            self.draw_point(event)
+        else:
+            # For all other modes we try to select a region, that method will
+            # will handle differences in these modes
+            self.select_region(event)
+
     # noinspection PyUnusedLocal
     def select_region(self, event):
-        # first, check if a label has been selected. If not, do nothing.
-        # If it has, determing the label code
-        current_label = self.current_label.get()
-        if current_label == '':
+        # First, make sure there is a current image
+        if self.current_img is None:
             return
 
-        current_label_code = self.label_option['values'].index(current_label)
-        current_label_code += 1
+        # Check if a label has been selected or if we are in delete
+        # mode. If a label is selected, determine the label code. If in
+        # delete mode, use label code -1. If neither, do nothing.
+        #
+        current_label = self.current_label.get()
+
+        # 'Find Regions',   mode=0
+        # 'Draw Region',    mode=1
+        # 'Split Region',   mode=2
+        # 'Delete Regions', mode=3
+        # 'Label Regions'   mode=4
+        mode = self.mode_option.current()
+
+        if mode == 3:
+            current_label_code = -1
+        elif mode == 2:
+            # if splitting a region, the old one will be marked as deleted
+            current_label_code = -1
+        elif current_label != '':
+            current_label_code = self.label_option['values'].index(current_label)
+            current_label_code += 1
+        else:
+            return
 
         # Next, check that the object is a polygon by the 'poly' tag we added
         current_cv_obj = self.canvas.find_withtag(tk.CURRENT)
@@ -1133,14 +1616,29 @@ class Application(tk.Frame):
         region_idx = int(tags[1])
         img_region_map = self.img_region_lut[self.current_img]
         labels = img_region_map['labels']
-        labels[region_idx] = current_label_code
+
+        if mode == 2:
+            # split region into 2 parts
+            split_contours = self.split_region(region_idx)
+            for c in split_contours:
+                self.save_contour(c)
+
+        # toggle this region label between current label and unlabelled
+        if labels[region_idx] == current_label_code:
+            labels[region_idx] = 0
+        elif labels[region_idx] == -1:
+            # toggle a deleted region back to unlabelled
+            labels[region_idx] = 0
+        else:
+            labels[region_idx] = current_label_code
 
         # finally, redraw regions
         self.clear_drawn_regions()
         self.draw_regions()
 
 
-root = themed_tk.ThemedTk()
-root.set_theme('arc')
-app = Application(root)
-root.mainloop()
+if __name__ == "__main__":
+    root = themed_tk.ThemedTk()
+    root.set_theme('arc')
+    app = Application(root)
+    root.mainloop()

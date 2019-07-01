@@ -1,6 +1,10 @@
 .idea
 data
 tmp
+*.tif
 *.pkl
 *.json
+build
+dist
+*.spec
 __pycache__

@@ -1,8 +1,8 @@
 import ontospy
 import pickle
 
-LOCAL_ONTOLOGY_FILE = '../resources/lung_ontology.owl'
-PICKLED_ONTOLOGY = '../resources/lung_ontology.pkl'
+LOCAL_ONTOLOGY_FILE = 'resources/lung_ontology.owl'
+PICKLED_ONTOLOGY = 'resources/lung_ontology.pkl'
 
 try:
     # load pickled ontospy object
