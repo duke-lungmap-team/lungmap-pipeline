@@ -2,8 +2,7 @@ import os
 import numpy as np
 from micap import utils, pipeline
 import pickle
-import matplotlib.pyplot as plt
-import cv2
+
 
 cell_radius = 16
 cell_size = np.pi * (cell_radius ** 2)
@@ -83,13 +82,6 @@ except FileNotFoundError:
     f = open(os.path.join(output_path, 'xgb_model.pkl'), 'wb')
     pickle.dump(pck, f)
     f.close()
-
-# test_img_hsv = test_img_hsv[750:1000, 1050:1300, :]
-#
-# plt.figure(figsize=(16, 16))
-# plt.imshow(cv2.cvtColor(test_img_hsv, cv2.COLOR_HSV2RGB))
-# plt.axis('off')
-# plt.show()
 
 # and pipeline test steps
 candidate_contours = pipeline.generate_structure_candidates(
