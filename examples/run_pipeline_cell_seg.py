@@ -1,7 +1,7 @@
 import numpy as np
 from PIL import Image
 import os
-from micap import utils, pipeline
+from ifmap import utils, pipeline
 import json
 
 # weird import style to un-confuse PyCharm

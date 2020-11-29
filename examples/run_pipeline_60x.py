@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from micap import pipeline
+from ifmap import pipeline
 from glob import glob
 from PIL import Image
 import cv2_extras as cv2x

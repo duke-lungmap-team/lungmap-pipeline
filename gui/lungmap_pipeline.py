@@ -10,7 +10,7 @@ import numpy as np
 from sklearn.cluster import spectral_clustering
 from sklearn.feature_extraction import image as sk_image
 import lungmap_utils
-from micap import utils as micap_utils, pipeline
+from ifmap import utils as ifmap_utils, pipeline
 
 pm_map_file = open('resources/probe_structure_map.json', 'r')
 PROBE_STRUCTURE_MAP = json.load(pm_map_file)
@@ -933,7 +933,7 @@ class Application(tk.Frame):
 
         luminance_corrected_imgs = []
         for img_name in sorted_img_names:
-            lum_corr_img = micap_utils.non_uniformity_correction(
+            lum_corr_img = ifmap_utils.non_uniformity_correction(
                 self.images[img_name]['hsv_img']
             )
             luminance_corrected_imgs.append(lum_corr_img)
@@ -942,7 +942,7 @@ class Application(tk.Frame):
             scaled_progress = int((progress / float(process_count)) * 100)
             self.status_progress.set(scaled_progress)
 
-        ref_img_idx = micap_utils.find_color_correction_reference(
+        ref_img_idx = ifmap_utils.find_color_correction_reference(
             luminance_corrected_imgs
         )
         self.ref_img_name = sorted_img_names[ref_img_idx]
@@ -951,7 +951,7 @@ class Application(tk.Frame):
         scaled_progress = int((progress / float(process_count)) * 100)
         self.status_progress.set(scaled_progress)
 
-        corr_rgb_imgs = micap_utils.color_correction(
+        corr_rgb_imgs = ifmap_utils.color_correction(
             luminance_corrected_imgs,
             ref_img_idx
         )
@@ -1312,7 +1312,7 @@ class Application(tk.Frame):
         )
 
     def find_regions(self):
-        # build micap pipeline, w/ seg stages based on 'has_part'
+        # build ifmap pipeline, w/ seg stages based on 'has_part'
         # and 'surrounded_by' probe/structure mappings
 
         # first, check that an image is selected

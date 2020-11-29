@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from micap import utils, pipeline
+from ifmap import utils, pipeline
 import pickle
 
 
@@ -50,6 +50,9 @@ output_path = os.path.join(
 # make our 'tmp' directory for caching trained & tested pipeline instances
 if not os.path.isdir(output_path):
     os.makedirs(output_path, exist_ok=True)
+
+training_data = utils.get_training_data_for_image_set(image_set_path)
+print('asdf')
 
 
 try:
